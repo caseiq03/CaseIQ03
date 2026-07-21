@@ -1,0 +1,2544 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid
+} from "recharts";
+
+// ── CONSTANTS ──────────────────────────────────────────────────────────────
+const FRAMEWORK_POOL = [
+  "Profitability","Market Entry","Growth Strategy","M&A / Due Diligence",
+  "Operations","Pricing","Competitive Response","Digital Transformation"
+];
+
+const CASE_DB = [
+  {id:"c1",firm:"McKinsey",fw:"Profitability",level:1,type:"case",
+   title:"RetailCo's Margin Collapse",
+   situation:"RetailCo, India's 3rd-largest retailer, saw EBITDA margins fall from 14% to 5% in 18 months despite 9% revenue growth. The CEO needs answers in 3 weeks.",
+   questions:[
+     {q:"What is your immediate hypothesis tree for why profits fell despite revenue growth?",rubric:["MECE structure","Revenue vs Cost split","Mix vs Volume vs Price distinction","Quantification attempt"]},
+     {q:"You find COGS jumped from 57% to 68% of revenue. What do you investigate?",rubric:["Input cost inflation","Pricing discipline","Category mix shift","Shrinkage/waste"]},
+     {q:"40% of new Tier 2 stores are below breakeven. Frame your recommendation.",rubric:["Data-backed closure criteria","Quantified synergy","Implementation timeline","Risk flag"]}
+   ],
+   hints:["Think Revenue = Price × Volume × Mix before jumping to costs","COGS increase could be external (inflation) or internal (mix). Check both.","Restructuring has a human cost — acknowledge it in your recommendation."],
+   tags:["India","Retail","P&L"]},
+  {id:"c2",firm:"BCG",fw:"Market Entry",level:1,type:"case",
+   title:"TeleCo's Southeast Asia Bet",
+   situation:"India's 3rd-largest telecom operator is saturating domestically (ARPU −4%/yr). The board is considering Vietnam and Indonesia. BCG has 6 weeks to advise.",
+   questions:[
+     {q:"What framework do you use to assess market attractiveness, and what's your first data request?",rubric:["Market size + growth","Competitive intensity","Regulatory environment","Prioritization logic"]},
+     {q:"Indonesia has 3 strong incumbents. How does this change your Go/No-Go?",rubric:["Differentiation path","M&A vs Greenfield analysis","Capital payback estimate","Risk quantification"]},
+   ],
+   hints:["Market Entry = Is it attractive? Can we win? How do we enter? Never skip step 3.","Oligopolies rarely welcome a 4th player — your entry mode must be clever."],
+   tags:["Telecom","Southeast Asia","International"]},
+  {id:"c3",firm:"Bain",fw:"M&A / Due Diligence",level:3,type:"case",
+   title:"HealthPlus's $2B Hospital Merger",
+   situation:"PE-backed HealthPlus wants to acquire MediCare (22 hospitals, $2B valuation). Bain must validate synergies and flag risks before the 4-month close.",
+   questions:[
+     {q:"Synergies are estimated at $400M. How do you validate this number?",rubric:["Revenue vs Cost synergy split","Realization haircut application","Comparable deal benchmark","Timeline to capture"]},
+     {q:"Target EBITDA margin is 18% vs industry 12%. Should you be concerned?",rubric:["Payor mix hypothesis","Accounting policy check","Sustainability post-acquisition","Due diligence data request list"]},
+     {q:"On Day 1 post-merger, what are your 3 biggest integration risks?",rubric:["People/culture identified","IT system complexity","Clinical quality continuity","Regulatory approval risk"]}
+   ],
+   hints:["Healthcare synergies have a 60–70% realization rate historically — apply this haircut upfront.","An unusually high margin often signals either a gem or a manipulation — your job is to find out which.","Integration failures kill more M&A deals than bad due diligence. Don't underweight it."],
+   tags:["Healthcare","PE","M&A","India"]},
+  {id:"c4",firm:"McKinsey",fw:"Growth Strategy",level:2,type:"case",
+   title:"EduTech's Tier 3 Frontier",
+   situation:"BrightLearn (40M users, top K-12 edtech) hit a growth wall post-COVID. CEO believes Tier 3 India is the next 100M users. Unit economics there are brutal.",
+   questions:[
+     {q:"What are the top 3 barriers to adoption in Tier 3, and how would you size each?",rubric:["Affordability quantified","Connectivity data","Language localization","Prioritization by impact"]},
+     {q:"Propose a go-to-market model that works with a ₹50/month price cap.",rubric:["Distribution channel choice","Partner ecosystem (telcos, schools)","Content strategy","Unit economics viability"]}
+   ],
+   hints:["₹500/month subscription = 3% of Tier 3 household income. That's unaffordable. Think freemium + bundles.","Offline-first isn't a nice-to-have in low-connectivity markets — it's table stakes."],
+   tags:["EdTech","India","Growth","Tier3"]},
+  {id:"c5",firm:"BCG",fw:"Pricing",level:2,type:"case",
+   title:"SteelCorp's Pricing Power Problem",
+   situation:"SteelCorp has held flat prices for 2 years while input costs rose 22%. A new CFO wants to raise prices by 15%. Sales fears losing key accounts. BCG is called in.",
+   questions:[
+     {q:"How do you assess whether SteelCorp has pricing power in this market?",rubric:["Price elasticity framing","Competitive price benchmarking","Customer segmentation by switching cost","Value-based pricing opportunity"]},
+     {q:"Design a pricing migration strategy that protects key accounts but improves margins.",rubric:["Segmented rollout plan","Value communication approach","Contract restructuring tactics","Financial impact model"]}
+   ],
+   hints:["Pricing power = how much customers need you vs. how easily they can replace you. Map both axes.","Not all customers deserve the same price — segment by volume, relationship depth, and strategic value."],
+   tags:["B2B","Steel","Pricing","CFO agenda"]},
+  {id:"c6",firm:"Bain",fw:"Competitive Response",level:2,type:"case",
+   title:"FastBank vs. The Neo-Bank Threat",
+   situation:"FastBank, a mid-size Indian private bank, is losing 18–35 year olds to neo-banks at 50K accounts/month. The MD needs a response strategy in 4 weeks.",
+   questions:[
+     {q:"Diagnose why FastBank is losing young customers. What data do you need first?",rubric:["Churn segmentation","Product gap analysis","UX/NPS comparison","Acquisition cost comparison"]},
+     {q:"Should FastBank build, buy, or partner to respond to neo-banks?",rubric:["Build vs Buy vs Partner framework","Speed-to-market vs cost trade-off","Brand dilution risk","Recommended path with rationale"]}
+   ],
+   hints:["Neo-banks win on UX, not rates. The product gap is emotional as much as functional.","Building takes 18–24 months. Buying is expensive. Partnering is messy. There's no clean answer — that's the point."],
+   tags:["Banking","Fintech","India","Competitive Response"]},
+  {id:"c7",firm:"McKinsey",fw:"Operations",level:2,type:"case",
+   title:"AutoMake's 40-Day Inventory Problem",
+   situation:"AutoMake's component inventory days ballooned from 18 to 40 days, tying up ₹800 crore in working capital. The COO wants it fixed in 6 months.",
+   questions:[
+     {q:"Map the likely causes of inventory buildup across the supply chain.",rubric:["Demand forecasting error","Supplier lead time variability","Safety stock policy review","Obsolescence / SKU proliferation"]},
+     {q:"Design a 90-day intervention. What do you do first?",rubric:["Quick wins identified","Root cause vs symptom distinction","Supplier negotiation lever","Measurement framework"]}
+   ],
+   hints:["Inventory = Demand uncertainty × Lead time × Safety stock policy. Fix all three, not just one.","The fastest working capital win is often not fewer SKUs — it's better forecasting. Start there."],
+   tags:["Manufacturing","Supply Chain","Working Capital"]},
+  {id:"c8",firm:"BCG",fw:"Digital Transformation",level:3,type:"case",
+   title:"InsureCo's AI Underwriting Bet",
+   situation:"InsureCo's underwriting team takes 8 days to process a commercial policy. A competitor uses AI and does it in 4 hours. The CTO wants a transformation roadmap.",
+   questions:[
+     {q:"What is the business case for AI-driven underwriting, and what data do you need to build it?",rubric:["Time/cost savings quantified","Accuracy/loss ratio improvement","Implementation cost estimate","Change management risk"]},
+     {q:"What are the top 3 risks of this transformation and how would you mitigate each?",rubric:["Model bias / regulatory risk","Legacy IT integration","Underwriter talent risk","Phased rollout logic"]}
+   ],
+   hints:["The ROI of AI underwriting is rarely just speed — look for loss ratio improvement as the biggest lever.","Underwriters fear replacement, not change. Frame AI as augmentation, not automation, in your comms plan."],
+   tags:["Insurance","AI","Digital Transformation"]},
+  {id:"c9",firm:"Bain",fw:"Profitability",level:2,type:"case",
+   title:"QSR Chain's Delivery Margin Trap",
+   situation:"QuickBite, a 600-outlet QSR, saw delivery revenue grow 40% but overall margins fell 3pp. The CEO says 'we're growing ourselves into losses on delivery.'",
+   questions:[
+     {q:"Build the unit economics of a delivery order vs. a dine-in order. What drives the gap?",rubric:["Commission rate quantified (25–30%)","Incremental COGS","Portion size / menu mix delta","Order frequency and basket size"]},
+     {q:"Should QuickBite exit delivery aggregators and build its own platform?",rubric:["CAC comparison","Network effect lock-in assessment","Capital requirement for own platform","Hybrid model consideration"]}
+   ],
+   hints:["Aggregator commission (25–30% of GMV) often wipes out QSR margins entirely. Model it with actual numbers.","Own-platform sounds appealing until you see the customer acquisition cost without aggregator traffic."],
+   tags:["QSR","Delivery","Profitability","India"]},
+  {id:"c10",firm:"McKinsey",fw:"Market Entry",level:3,type:"case",
+   title:"PharmaCo Enters Generic Oncology",
+   situation:"A top-5 Indian pharma company wants to enter the generic oncology segment — ₹8,000 crore market growing at 18%. The board has approved ₹500 crore capex.",
+   questions:[
+     {q:"Assess market attractiveness. What makes oncology generics different from regular generics?",rubric:["Regulatory complexity (biologics/biosimilars)","Pricing dynamics (oncologist influence)","IP cliff timeline","Cold chain requirement"]},
+     {q:"With ₹500 crore, what's the most capital-efficient entry strategy?",rubric:["Build vs license vs acquire","Portfolio prioritization (which molecules)","Time to revenue estimate","Partnership ecosystem"]}
+   ],
+   hints:["Oncology generics aren't just complex chemistry — they require oncologist relationships and cold chain. These are moats.","₹500 crore sounds like a lot until you price a biosimilar manufacturing facility. Think licensing first."],
+   tags:["Pharma","India","Market Entry","Oncology"]},
+  {id:"c11",firm:"BCG",fw:"Growth Strategy",level:3,type:"case",
+   title:"D2C Brand's Amazon Dependency",
+   situation:"NatureSkin, a D2C skincare brand at ₹120 crore ARR, earns 70% of revenue from Amazon. Margins are being squeezed. The founder wants a brand-owned growth path.",
+   questions:[
+     {q:"Diagnose the structural risk of Amazon dependency. When does it become existential?",rubric:["Platform fee trajectory","Algorithm risk / visibility","Brand equity dilution","Customer data ownership gap"]},
+     {q:"Design a 2-year roadmap to reduce Amazon to <40% of revenue.",rubric:["D2C website investment ROI","Community/content-led acquisition","Offline retail consideration","Unit economics comparison across channels"]}
+   ],
+   hints:["Amazon takes 35–40% of realized revenue after fees. Your brand is renting customers, not owning them.","D2C CAC is high upfront but LTV compounds if retention is strong. Model cohort economics, not just blended CAC."],
+   tags:["D2C","FMCG","India","Growth"]},
+  {id:"c12",firm:"Bain",fw:"M&A / Due Diligence",level:2,type:"case",
+   title:"LogiCo Acquires Last-Mile Startup",
+   situation:"LogiCo (listed logistics player) wants to acquire RapidDrop, a last-mile startup at 3× revenue valuation. RapidDrop burns ₹8 crore/month with no path to profitability yet.",
+   questions:[
+     {q:"How do you assess whether 3× revenue is a fair valuation for a loss-making startup?",rubric:["Comparable transaction multiples","Unit economics trajectory","Strategic vs financial valuation logic","WACC / terminal value sensitivity"]},
+     {q:"What are the top integration risks given the cultural gap between a listed company and a startup?",rubric:["Talent retention of founders","Process bureaucracy risk","Brand architecture decision","KPI/reporting system conflict"]}
+   ],
+   hints:["Valuing a loss-making company requires projecting when and if it reaches unit economics breakeven. Model three scenarios.","Startup-corporate integrations fail most often due to people, not strategy. Founder retention is your #1 risk."],
+   tags:["Logistics","Startup","M&A","Valuation"]},
+];
+
+const GUESS_DB = [
+  {id:"g1",cat:"Market Size",q:"How many cups of chai are consumed in India every day?",hint:"Population × chai-drinking % × cups per day",answer:"~1.5–2 billion cups/day",breakdown:"1.4B people × 75% chai drinkers = 1.05B drinkers × 1.5 cups/day ≈ 1.57B cups. Industry data: 800M–2B. ₹10/cup × 1.5B = ₹5,500 crore daily market.",approach:"Top-down population segmentation"},
+  {id:"g2",cat:"Urban / Infrastructure",q:"How many traffic signals are there in Mumbai?",hint:"Road network length ÷ average signal spacing",answer:"~1,200–1,800 signals",breakdown:"600 sq km city × 8 km road/sq km = 4,800 km roads. Major roads: ~1,500 km ÷ 3 km per signal = 500. Secondary + pedestrian = 2×. Total ~1,000–1,500. Official BMC: ~1,100+.",approach:"Infrastructure density model"},
+  {id:"g3",cat:"Market Size",q:"What is the annual gym membership market size in India? (₹ crore)",hint:"Urban adults × penetration rate × average fee",answer:"₹8,000–12,000 crore/year",breakdown:"500M urban Indians × 40% aged 18–45 = 200M. 5–7% gym penetration = 10–14M members × ₹8,000–12,000/year = ₹8,000–16,000 crore. Midpoint: ₹10,000 crore.",approach:"TAM segmentation"},
+  {id:"g4",cat:"Operations",q:"How many flights take off from Delhi's IGI Airport in a day?",hint:"Runways × throughput per hour × operating hours",answer:"~900–1,100 flights/day",breakdown:"3 runways × 1 takeoff per 2.5 min = 24/hr per runway. Takeoffs only = 12/hr. 3 runways × 12 = 36/hr × 20 operating hrs = 720. Peak-hour buffer → 900–1,100. Official: ~950–1,050.",approach:"Throughput / capacity model"},
+  {id:"g5",cat:"Market Size",q:"How many weddings happen in India every year?",hint:"Crude marriage rate × total population",answer:"~10–12 million weddings/year",breakdown:"1.4B people × 7–8 marriages per 1,000/year = 9.8–11.2M. Cross-check: 700M people ÷ 35 years average marriage age span × 50% married = ~10M. Industry: ₹10 lakh crore+ market.",approach:"Demographic rate model"},
+  {id:"g6",cat:"Consumer",q:"How many smartphones are sold in India every month?",hint:"Annual shipments from replacement cycles + first-time buyers ÷ 12",answer:"~12–15 million/month",breakdown:"Smartphone base: 750M. Replacement cycle: 2.5 years = 25M replacements/month. Wait — annual = 300M/yr. IDC data: 150–170M/year = 12–14M/month. First-time buyers add ~2M/month.",approach:"Stock-and-flow model"},
+  {id:"g7",cat:"Urban / Infrastructure",q:"How many petrol pumps are there in India?",hint:"Vehicles on road ÷ vehicles served per pump per day",answer:"~80,000–100,000 pumps",breakdown:"300M vehicles × 2 fills/month = 600M fills/month = 20M/day. Each pump: ~200–250 vehicles/day. 20M ÷ 225 = ~89,000 pumps. Government data: ~85,000. Great estimate!",approach:"Demand-side throughput"},
+  {id:"g8",cat:"Operations",q:"How many tonnes of garbage does Mumbai generate daily?",hint:"Population × kg per capita/day + commercial waste",answer:"~6,000–7,500 tonnes/day",breakdown:"Mumbai: 20M people × 0.45 kg/day = 9,000 tonnes residential. Discount for non-active households: 75% = 6,750. Commercial/industrial adds ~10% = ~7,400 tonnes. BMC official: ~6,500 tonnes/day.",approach:"Per-capita waste model"},
+  {id:"g9",cat:"Market Size",q:"What is the market size of private coaching (tuitions) in India? (₹ crore)",hint:"Students × penetration × monthly fee × 12",answer:"₹1,40,000–2,00,000 crore/year",breakdown:"350M students (K-12) × 30% take private tuition = 105M students × ₹1,500/month avg × 10 months = ₹1,57,500 crore. IBEF data: ~₹1.5 lakh crore, growing 35% post-COVID.",approach:"Student base penetration"},
+  {id:"g10",cat:"Consumer",q:"How many orders does Swiggy/Zomato collectively deliver in India daily?",hint:"Active users × order frequency per month ÷ 30",answer:"~10–14 million orders/day",breakdown:"Combined active users: ~80M. Average orders per user per month: 4–5 orders. 80M × 4.5 ÷ 30 = 12M orders/day. Cross-check: ~3.5B orders/year ÷ 365 = 9.6M/day. Range: 10–14M.",approach:"Cohort frequency model"},
+  {id:"g11",cat:"Urban / Infrastructure",q:"How many people use the Delhi Metro in a day?",hint:"Number of stations × average ridership per station or fleet capacity × utilization",answer:"~5–6 million passengers/day",breakdown:"392 stations, but many are transfer stations. Ridership = trains × capacity × trips. 300 trains × 2,500 seats × 80% capacity × 8 trips/day = 4.8M. DMRC official peak: ~6M pre-COVID, ~5M current.",approach:"Fleet capacity utilization"},
+  {id:"g12",cat:"Market Size",q:"What is the OTC (over-the-counter) pharma market size in India? (₹ crore)",hint:"Urban + rural population × OTC spend per person per year",answer:"₹40,000–55,000 crore/year",breakdown:"1.4B people × ₹350/year OTC spend avg = ₹49,000 crore. Urban: 500M × ₹600 = ₹30,000cr. Rural: 900M × ₹200 = ₹18,000cr. Total: ₹48,000 crore. IQVIA data: ~$5–6B = ₹42,000–50,000 crore.",approach:"Urban-rural segmentation"},
+];
+
+// ── PERSISTENCE LAYER ────────────────────────────────────────────────────
+// Artifacts cannot use localStorage (it fails in this sandbox). We use the
+// artifact window.storage API for real cross-session persistence, with a safe
+// in-memory fallback so the app still works if storage is unavailable.
+const STORE_KEY = "caseiq:v1";
+const _mem = {};
+const _memShared = {};
+const store = {
+  async get(k, shared = false) {
+    if (typeof window !== "undefined" && window.storage) return window.storage.get(k, shared);
+    const bag = shared ? _memShared : _mem;
+    if (k in bag) return { value: bag[k], shared };
+    return null;
+  },
+  async set(k, v, shared = false) {
+    if (typeof window !== "undefined" && window.storage) return window.storage.set(k, v, shared);
+    (shared ? _memShared : _mem)[k] = v; return { value: v, shared };
+  },
+  async delete(k, shared = false) {
+    if (typeof window !== "undefined" && window.storage) return window.storage.delete(k, shared);
+    delete (shared ? _memShared : _mem)[k]; return { deleted: true, shared };
+  },
+  async list(prefix = "", shared = false) {
+    if (typeof window !== "undefined" && window.storage) return window.storage.list(prefix, shared);
+    const bag = shared ? _memShared : _mem;
+    return { keys: Object.keys(bag).filter(k => k.startsWith(prefix)), shared };
+  },
+};
+function genId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+function dateKey(d = new Date()) { return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+function dayNumber(d = new Date()) { return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000); }
+
+// ── LEVEL SYSTEM ───────────────────────────────────────────────────────────
+const LEVEL_THRESHOLDS = [0, 250, 600, 1100, 1800, 2800, 4200, 6000, 8500, 12000];
+const LEVEL_TITLES = ["Analyst","Associate","Consultant","Sr. Consultant","Manager","Principal","Partner","Sr. Partner","Director","Managing Partner"];
+function getLevelInfo(xp) {
+  let level = 1, floor = 0, ceil = LEVEL_THRESHOLDS[1];
+  for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
+    if (xp >= LEVEL_THRESHOLDS[i]) {
+      level = i + 1; floor = LEVEL_THRESHOLDS[i];
+      ceil = LEVEL_THRESHOLDS[i + 1] ?? LEVEL_THRESHOLDS[i];
+    }
+  }
+  const span = Math.max(1, ceil - floor);
+  const pct = ceil > floor ? Math.min(100, Math.round(((xp - floor) / span) * 100)) : 100;
+  return { level, title: LEVEL_TITLES[Math.min(level - 1, LEVEL_TITLES.length - 1)], floor, ceil, pct, isMax: ceil === floor };
+}
+
+// ── AI CALLS ─────────────────────────────────────────────────────────────
+async function callModel(prompt, maxTokens) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] })
+  });
+  const data = await res.json();
+  const text = data.content?.map(b => b.text || "").join("") || "";
+  return JSON.parse(text.replace(/```json|```/g, "").trim());
+}
+
+async function getAIReview(caseTitle, question, answer, rubric, context) {
+  const prompt = `You are a brutally honest McKinsey senior partner reviewing a candidate's case answer. Be direct, specific, and harsh where needed but constructive.
+
+Case: "${caseTitle}"
+Question: "${question}"
+Candidate's Answer: "${answer}"
+Evaluation Rubric: ${rubric.join(", ")}
+${context ? `\nCandidate track record (use this to personalize — call out recurring patterns if the answer repeats a known weakness, or acknowledge genuine improvement): ${context}` : ""}
+
+Give a review in this EXACT JSON format (no markdown, no extra text):
+{
+  "score": <integer 1-10>,
+  "verdict": "<2-3 word harsh verdict like 'Structurally Weak' or 'Sharp Thinking' or 'Missed the Point'>",
+  "strengths": ["<specific strength 1>", "<specific strength 2>"],
+  "gaps": ["<specific gap 1>", "<specific gap 2>"],
+  "brutalhonesty": "<1 sentence brutal honest observation, personalized to their track record where relevant>",
+  "nexttime": "<1 specific thing to do differently next time>",
+  "improvementPlan": "<1 concrete drill or habit that targets this candidate's biggest recurring gap>"
+}`;
+  try { return await callModel(prompt, 1100); }
+  catch {
+    return {
+      score: 5, verdict: "Incomplete Analysis",
+      strengths: ["Attempted an answer"],
+      gaps: ["Did not address all rubric criteria", "Lacked quantification"],
+      brutalhonesty: "A real interviewer would have moved on after 30 seconds of this.",
+      nexttime: "Structure first — always state your framework before your answer.",
+      improvementPlan: "Before every answer, spend 20 seconds writing a 3-branch MECE structure, then speak to it."
+    };
+  }
+}
+
+async function getGuessReview(question, userAnswer, correctAnswer, approach) {
+  const prompt = `You are a consulting trainer reviewing a market sizing guesstimate. Be direct.
+
+Question: "${question}"
+Model Answer: "${correctAnswer}"
+User's Answer: "${userAnswer || "(no answer given)"}"
+Correct Approach: ${approach}
+
+Respond ONLY in this JSON (no markdown):
+{
+  "accurate": <true/false — was the order of magnitude roughly right?>,
+  "accuracy_pct": <integer 0-100>,
+  "verdict": "<3-word verdict>",
+  "feedback": "<2 sentences of direct feedback on their logic and answer>",
+  "improvement": "<1 specific skill to sharpen>"
+}`;
+  try { return await callModel(prompt, 500); }
+  catch { return { accurate: false, accuracy_pct: 40, verdict: "Needs More Work", feedback: "Keep practicing structured decomposition.", improvement: "Top-down segmentation" }; }
+}
+
+async function getModelAnswer(c) {
+  const prompt = `You are a senior MBB (McKinsey/BCG/Bain) partner writing the ideal model solution to a case, for a candidate to study afterward. Be rigorous and concrete.
+
+Case: "${c.title}"
+Firm: ${c.firm}
+Framework area: ${c.fw}
+Situation: ${c.situation}
+Questions: ${c.questions.map((q, i) => `(${i + 1}) ${q.q}`).join("  ")}
+
+Respond ONLY in this JSON (no markdown, no extra text):
+{
+  "framework": "<the recommended framework and a one-line reason to use it>",
+  "issueTree": ["<top branch: its sub-points>", "<second branch: its sub-points>", "<third branch: its sub-points>"],
+  "calculations": "<the key quantitative logic a strong candidate would show, with representative numbers>",
+  "recommendation": "<the crisp final recommendation, 2-3 sentences>",
+  "risks": ["<risk 1>", "<risk 2>", "<risk 3>"],
+  "nextSteps": ["<next step 1>", "<next step 2>", "<next step 3>"]
+}`;
+  try { return await callModel(prompt, 1300); }
+  catch {
+    return {
+      framework: `A structured ${c.fw} approach, broken into MECE branches before diving into any single driver.`,
+      issueTree: ["Diagnose the problem: quantify the gap and isolate where it comes from", "Generate hypotheses: test the largest drivers first with data", "Recommend: tie the fix to a measurable business outcome"],
+      calculations: "Start from the headline metric, decompose into its levers, and size each lever's contribution before prioritising.",
+      recommendation: "Lead with the single highest-impact action, quantify the expected result, and sequence the rest by effort vs. impact.",
+      risks: ["Execution capacity may be overestimated", "Data quality could undermine the sizing", "Stakeholder buy-in is not guaranteed"],
+      nextSteps: ["Validate the top hypothesis with a focused data pull", "Build the quantified business case", "Design a 90-day pilot with clear success metrics"]
+    };
+  }
+}
+
+// ── HELPERS ────────────────────────────────────────────────────────────────
+function getRoomCode() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("room");
+}
+function generateRoomCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+function shuffle(arr) {
+  const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a;
+}
+function initials(name) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+function playAlert() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [660, 880].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination); o.type = "sine"; o.frequency.value = f;
+      const t = ctx.currentTime + i * 0.28;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.14, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      o.start(t); o.stop(t + 0.28);
+    });
+  } catch { /* audio not available */ }
+}
+
+const COLORS = ["#1B4B8A","#C23B22","#2E7D52","#7B3FA0","#C9860A","#1A7A7A","#A0522D","#4A4580"];
+const CASE_DURATION = 20 * 60; // 20 minutes
+const CHART = { blue:"#1B4B8A", gold:"#C9A84C", green:"#2E7D52", red:"#C23B22", purple:"#7B3FA0", track:"#EFEAE2" };
+const DIFF_LABEL = { 1: "Beginner", 2: "Intermediate", 3: "Advanced" };
+const NOTE_TABS = [
+  ["issueTree", "Issue tree", "Break the problem into MECE branches.\n- Branch 1\n  - sub-point\n- Branch 2"],
+  ["hypotheses", "Hypotheses", "State what you believe is true and how you'd test it.\n- Hypothesis:\n  - Test:"],
+  ["assumptions", "Assumptions", "List the numbers and conditions you're taking as given."],
+  ["risks", "Risks", "What could break your recommendation?"],
+  ["calcs", "Calculations", "Scratch math here. Show your working."],
+  ["insights", "Key insights", "The 2-3 things you'd actually say to the client."],
+];
+const MOCK_TOTAL = 60 * 60; // 60-minute full interview
+const MOCK_Q = 5 * 60;      // 5 minutes per question
+const COMPANY_SIZES = ["Any size", "Startup", "SME", "Mid-market", "Large enterprise", "Conglomerate"];
+const MBB_FIRMS = ["McKinsey", "BCG", "Bain"];
+
+// ── ACHIEVEMENTS ────────────────────────────────────────────────────────────
+// Each has a predicate over a computed stats object. Unlocks are detected and
+// celebrated as the user crosses each threshold.
+const ACHIEVEMENTS = [
+  { id: "first_case",  title: "First Blood",       desc: "Complete your first case",              check: s => s.cases >= 1 },
+  { id: "warmup",      title: "Warming Up",        desc: "Complete 3 cases",                      check: s => s.cases >= 3 },
+  { id: "grinder",     title: "The Grinder",       desc: "Complete 10 cases",                     check: s => s.cases >= 10 },
+  { id: "sharp",       title: "Sharp Thinking",    desc: "Score 8+ on any case",                  check: s => s.bestCase >= 8 },
+  { id: "flawless",    title: "Flawless",          desc: "Score 9+ on any case",                  check: s => s.bestCase >= 9 },
+  { id: "streak3",     title: "On a Roll",         desc: "Reach a 3-day streak",                  check: s => s.streak >= 3 },
+  { id: "streak7",     title: "Unstoppable",       desc: "Reach a 7-day streak",                  check: s => s.streak >= 7 },
+  { id: "sizer",       title: "Back-of-Envelope",  desc: "Finish 5 guesstimates",                 check: s => s.guesses >= 5 },
+  { id: "explorer",    title: "Generalist",        desc: "Practise 5 different frameworks",       check: s => s.frameworks >= 5 },
+  { id: "mock1",       title: "Under Pressure",    desc: "Finish a full mock interview",          check: s => s.mocks >= 1 },
+  { id: "mockace",     title: "Offer Standard",    desc: "Average 8+ across a mock interview",    check: s => s.bestMock >= 8 },
+  { id: "daily3",      title: "Daily Habit",       desc: "Reach a 3-day daily streak",            check: s => s.dailyStreak >= 3 },
+  { id: "creator",     title: "Case Author",       desc: "Generate a custom case",                check: s => s.generated >= 1 },
+  { id: "lvl5",        title: "Made Manager",      desc: "Reach level 5",                         check: s => s.level >= 5 },
+  { id: "completionist", title: "Cleared the Deck", desc: "Complete every built-in case",         check: s => s.baseCleared },
+];
+
+function fireConfetti() {
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const canvas = document.createElement("canvas");
+    canvas.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;";
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext("2d");
+    const cols = ["#C9A84C", "#1B4B8A", "#2E7D52", "#C23B22", "#7B3FA0"];
+    const N = 130;
+    const parts = Array.from({ length: N }, () => ({
+      x: canvas.width / 2 + (Math.random() - 0.5) * 120,
+      y: canvas.height / 3,
+      vx: (Math.random() - 0.5) * 12,
+      vy: Math.random() * -12 - 4,
+      r: Math.random() * 5 + 3,
+      c: cols[Math.floor(Math.random() * cols.length)],
+      rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3,
+    }));
+    let frame = 0;
+    const tick = () => {
+      frame++;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      parts.forEach(p => {
+        p.vy += 0.35; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.fillStyle = p.c; ctx.fillRect(-p.r / 2, -p.r / 2, p.r, p.r * 1.6); ctx.restore();
+      });
+      if (frame < 130) requestAnimationFrame(tick);
+      else canvas.remove();
+    };
+    requestAnimationFrame(tick);
+  } catch { /* no canvas */ }
+}
+
+// ── AI CASE GENERATOR ──────────────────────────────────────────────────────
+async function generateCase(params) {
+  const prompt = `You are a senior MBB interviewer who authors original case interviews. Create ONE realistic, self-contained consulting case that feels like a genuine McKinsey/BCG/Bain interview.
+
+Requirements:
+- Framework focus: ${params.fw}
+- Difficulty: ${params.level} (1 = beginner, 2 = intermediate, 3 = advanced)
+- Industry: ${params.industry || "your choice"}
+- Geography: ${params.geo || "your choice"}
+- Company size: ${params.size && params.size !== "Any size" ? params.size : "your choice"}
+- Functional area: ${params.func || "your choice"}
+
+Respond ONLY in this JSON (no markdown, no extra text):
+{
+  "title": "<short punchy case title>",
+  "firm": "<McKinsey|BCG|Bain>",
+  "situation": "<3-5 sentences: business background, the client's objective, and the key numbers/context a candidate needs>",
+  "exhibits": ["<a short data exhibit as one line, e.g. 'Revenue split: Product A 60%, B 30%, C 10%'>", "<second exhibit>"],
+  "questions": [
+    {"q": "<interview question 1>", "rubric": ["<criterion>", "<criterion>", "<criterion>", "<criterion>"]},
+    {"q": "<interview question 2>", "rubric": ["<criterion>", "<criterion>", "<criterion>", "<criterion>"]}
+  ],
+  "hints": ["<hint for q1>", "<hint for q2>"],
+  "modelAnswer": {
+    "framework": "<recommended framework + one-line reason>",
+    "issueTree": ["<branch 1: sub-points>", "<branch 2: sub-points>", "<branch 3: sub-points>"],
+    "calculations": "<key quantitative logic with representative numbers>",
+    "recommendation": "<crisp recommendation, 2-3 sentences>",
+    "risks": ["<risk>", "<risk>"],
+    "nextSteps": ["<step>", "<step>", "<step>"]
+  }
+}`;
+  const data = await callModel(prompt, 2200);
+  return data;
+}
+
+// ── SPARKLINE (inline SVG, lightweight) ────────────────────────────────────
+function Sparkline({ data, width = 84, height = 26 }) {
+  if (!data || data.length < 2) {
+    return <span style={{ fontSize: "0.72rem", color: "#B8B2A8" }}>Not enough data</span>;
+  }
+  const min = Math.min(...data), max = Math.max(...data), span = (max - min) || 1;
+  const step = width / (data.length - 1);
+  const pts = data.map((v, i) => `${(i * step).toFixed(1)},${(height - ((v - min) / span) * (height - 4) - 2).toFixed(1)}`);
+  const delta = data[data.length - 1] - data[0];
+  const color = delta > 0 ? "#2E7D52" : delta < 0 ? "#C23B22" : "#8A8480";
+  const last = pts[pts.length - 1].split(",");
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={last[0]} cy={last[1]} r="2.4" fill={color} />
+    </svg>
+  );
+}
+
+// ── MAIN APP ───────────────────────────────────────────────────────────────
+export default function App() {
+  const [hydrated, setHydrated] = useState(false);
+  const [screen, setScreen] = useState("home");
+  const [userName, setUserName] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [avatarColor] = useState(() => COLORS[Math.floor(Math.random()*COLORS.length)]);
+
+  // Room/collab
+  const [roomCode] = useState(() => getRoomCode() || generateRoomCode());
+  const [roomUsers, setRoomUsers] = useState([]);
+  const [collabMode] = useState(!!getRoomCode());
+  const [shareTooltip, setShareTooltip] = useState(false);
+
+  // Cases
+  const [caseIdx, setCaseIdx] = useState(0);
+  const [caseAnswers, setCaseAnswers] = useState({});
+  const [caseReviews, setCaseReviews] = useState({});
+  const [reviewing, setReviewing] = useState(null);
+  const [showHint, setShowHint] = useState({});
+  const [hintUsed, setHintUsed] = useState({});
+  const [caseDone, setCaseDone] = useState(false);
+  const [loadingReview, setLoadingReview] = useState(false);
+
+  // Model answers (session-only)
+  const [modelAnswers, setModelAnswers] = useState({});
+  const [modelLoading, setModelLoading] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
+
+  // Notes (persisted)
+  const [notes, setNotes] = useState({});
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [noteTab, setNoteTab] = useState("issueTree");
+
+  // Filters + prevent-repeat
+  const [diffFilter, setDiffFilter] = useState("all");
+  const [fwFilter, setFwFilter] = useState("all");
+  const [completedCaseIds, setCompletedCaseIds] = useState([]);
+
+  // Case timer
+  const [caseTimerSec, setCaseTimerSec] = useState(CASE_DURATION);
+  const [caseTimerRunning, setCaseTimerRunning] = useState(false);
+  const caseTimerRef = useRef(null);
+  const caseAlertedRef = useRef(false);
+
+  // Guesstimates
+  const [guessQueue] = useState(() => shuffle(GUESS_DB));
+  const [guessIdx, setGuessIdx] = useState(0);
+  const [guessAnswer, setGuessAnswer] = useState("");
+  const [guessLogic, setGuessLogic] = useState("");
+  const [guessReview, setGuessReview] = useState(null);
+  const [guessLoading, setGuessLoading] = useState(false);
+  const [timerSec, setTimerSec] = useState(120);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const timerRef = useRef(null);
+  const [revealed, setRevealed] = useState(false);
+
+  // History & Score
+  const [history, setHistory] = useState([]);
+  const [score, setScore] = useState(0);
+  const [streak, setStreak] = useState(0);
+
+  // Identity + daily + shared leaderboard (Phase 4)
+  const [userId, setUserId] = useState(() => genId());
+  const [dailyCompleted, setDailyCompleted] = useState([]); // array of date keys
+  const [dailyMode, setDailyMode] = useState(false);
+  const [publishOptIn, setPublishOptIn] = useState(false);
+  const [sharedBoard, setSharedBoard] = useState([]);
+  const [boardLoading, setBoardLoading] = useState(false);
+  const [roomPresence, setRoomPresence] = useState([]);
+  const [msToMidnight, setMsToMidnight] = useState(0);
+  const [unlockedAchievements, setUnlockedAchievements] = useState([]);
+  const [soundOn, setSoundOn] = useState(true);
+  const soundOnRef = useRef(true);
+  const reviewCtxRef = useRef("");
+
+  // Generated cases + generator
+  const [extraCases, setExtraCases] = useState([]);
+  const [genOpen, setGenOpen] = useState(false);
+  const [genLoading, setGenLoading] = useState(false);
+  const [genForm, setGenForm] = useState({ fw: FRAMEWORK_POOL[0], level: "2", industry: "", geo: "", size: "Any size", func: "" });
+
+  // Mock interview
+  const [mockState, setMockState] = useState("idle"); // idle | running | scoring | report
+  const [mockCases, setMockCases] = useState([]);
+  const [mockSteps, setMockSteps] = useState([]);
+  const [mockStep, setMockStep] = useState(0);
+  const [mockAnswers, setMockAnswers] = useState({});
+  const [mockOverallSec, setMockOverallSec] = useState(MOCK_TOTAL);
+  const [mockQSec, setMockQSec] = useState(MOCK_Q);
+  const [mockReport, setMockReport] = useState(null);
+  const [mockReviewProgress, setMockReviewProgress] = useState(0);
+  const mockStepsRef = useRef([]);
+  const mockAnswersRef = useRef({});
+  const mockCasesRef = useRef([]);
+  const finishMockRef = useRef(() => {});
+  const mockScoringRef = useRef(false);
+
+  // UI
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [dashTab, setDashTab] = useState("leaderboard");
+  const prevLevelRef = useRef(1);
+
+  const [leaderboard] = useState([
+    {name:"Priya M.",avatar:"PM",color:"#1B4B8A",score:1840,streak:7,cases:8,accuracy:78},
+    {name:"Arjun S.",avatar:"AS",color:"#C23B22",score:1620,streak:5,cases:7,accuracy:71},
+    {name:"Neha K.",avatar:"NK",color:"#2E7D52",score:1410,streak:4,cases:6,accuracy:68},
+    {name:"Rohan V.",avatar:"RV",color:"#7B3FA0",score:1280,streak:3,cases:5,accuracy:65},
+  ]);
+
+  const levelInfo = getLevelInfo(score);
+  const myInitials = initials(userName);
+
+  const showToast = useCallback((msg, kind = "info") => {
+    setToast({ msg, kind });
+    setTimeout(() => setToast(null), 3200);
+  }, []);
+  useEffect(() => { soundOnRef.current = soundOn; }, [soundOn]);
+  const ding = useCallback(() => { if (soundOnRef.current) playAlert(); }, []);
+
+  // ── LOAD FROM STORAGE ON MOUNT ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await store.get(STORE_KEY);
+        if (!cancelled && r && r.value) {
+          const d = JSON.parse(r.value);
+          if (d.userName) setUserName(d.userName);
+          if (typeof d.score === "number") setScore(d.score);
+          if (typeof d.streak === "number") setStreak(d.streak);
+          if (Array.isArray(d.history)) setHistory(d.history);
+          if (Array.isArray(d.completedCaseIds)) setCompletedCaseIds(d.completedCaseIds);
+          if (d.notes && typeof d.notes === "object") setNotes(d.notes);
+          if (Array.isArray(d.extraCases)) setExtraCases(d.extraCases);
+          if (d.userId) setUserId(d.userId);
+          if (Array.isArray(d.dailyCompleted)) setDailyCompleted(d.dailyCompleted);
+          if (typeof d.publishOptIn === "boolean") setPublishOptIn(d.publishOptIn);
+          if (Array.isArray(d.unlockedAchievements)) setUnlockedAchievements(d.unlockedAchievements);
+          if (typeof d.soundOn === "boolean") { setSoundOn(d.soundOn); soundOnRef.current = d.soundOn; }
+          prevLevelRef.current = getLevelInfo(d.score || 0).level;
+        }
+      } catch { /* no saved state yet */ }
+      if (!cancelled) setHydrated(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── SAVE TO STORAGE ON CHANGE ──
+  useEffect(() => {
+    if (!hydrated) return;
+    const payload = JSON.stringify({ userName, score, streak, history, completedCaseIds, notes, extraCases, userId, dailyCompleted, publishOptIn, unlockedAchievements, soundOn });
+    store.set(STORE_KEY, payload).catch(() => {});
+  }, [hydrated, userName, score, streak, history, completedCaseIds, notes, extraCases, userId, dailyCompleted, publishOptIn, unlockedAchievements, soundOn]);
+
+  // ── LEVEL-UP DETECTION ──
+  useEffect(() => {
+    if (!hydrated) return;
+    if (levelInfo.level > prevLevelRef.current) {
+      showToast(`Level up — you're now a ${levelInfo.title} (Lv ${levelInfo.level})`, "level");
+      fireConfetti();
+    }
+    prevLevelRef.current = levelInfo.level;
+  }, [levelInfo.level, hydrated, showToast, levelInfo.title]);
+
+  // ── GUESS TIMER ──
+  useEffect(() => {
+    if (timerRunning) {
+      timerRef.current = setInterval(() => {
+        setTimerSec(s => { if (s <= 1) { clearInterval(timerRef.current); setTimerRunning(false); return 0; } return s-1; });
+      }, 1000);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [timerRunning]);
+
+  // ── CASE TIMER ──
+  useEffect(() => {
+    if (caseTimerRunning) {
+      caseTimerRef.current = setInterval(() => {
+        setCaseTimerSec(s => {
+          if (s <= 1) {
+            clearInterval(caseTimerRef.current);
+            setCaseTimerRunning(false);
+            if (!caseAlertedRef.current) { ding(); caseAlertedRef.current = true; showToast("Time's up on this case.", "warn"); }
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(caseTimerRef.current);
+  }, [caseTimerRunning, showToast]);
+
+  // Real room presence via shared storage: write a heartbeat, poll participants.
+  useEffect(() => {
+    if (!collabMode || !userName || !hydrated) return;
+    let stop = false;
+    const myKey = `room:${roomCode}:${userId}`;
+    const beat = async () => {
+      try { await store.set(myKey, JSON.stringify({ name: userName, initials: myInitials, color: avatarColor, ts: Date.now() }), true); } catch { /* offline */ }
+    };
+    const poll = async () => {
+      try {
+        const res = await store.list(`room:${roomCode}:`, true);
+        const keys = res?.keys || [];
+        const entries = [];
+        for (const k of keys) {
+          try { const r = await store.get(k, true); if (r?.value) entries.push({ id: k, ...JSON.parse(r.value) }); } catch { /* skip */ }
+        }
+        const now = Date.now();
+        const live = entries
+          .filter(e => now - (e.ts || 0) < 20000)
+          .map(e => ({ ...e, online: true, self: e.id.endsWith(userId) }))
+          .sort((a, b) => (a.self ? -1 : b.self ? 1 : 0));
+        if (!stop) setRoomPresence(live);
+      } catch { /* offline */ }
+    };
+    beat(); poll();
+    const iv = setInterval(() => { beat(); poll(); }, 6000);
+    return () => { stop = true; clearInterval(iv); store.delete(myKey, true).catch(() => {}); };
+  }, [collabMode, userName, hydrated, roomCode, userId, myInitials, avatarColor]);
+
+  // Countdown to local midnight for the daily challenge
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const mid = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+      setMsToMidnight(mid - now);
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // ── DERIVED: FILTERED + UNSEEN-FIRST CASE LIST ──
+  const casePool = [...CASE_DB, ...extraCases];
+  const isCompleted = useCallback((id) => completedCaseIds.includes(id), [completedCaseIds]);
+  const filteredCases = casePool.filter(c =>
+    (diffFilter === "all" || c.level === Number(diffFilter)) &&
+    (fwFilter === "all" || c.fw === fwFilter)
+  );
+  const orderedCases = [...filteredCases].sort((a, b) => (isCompleted(a.id) ? 1 : 0) - (isCompleted(b.id) ? 1 : 0));
+  const safeIdx = orderedCases.length ? ((caseIdx % orderedCases.length) + orderedCases.length) % orderedCases.length : 0;
+  const currentCase = orderedCases[safeIdx];
+  const allInFilterDone = orderedCases.length > 0 && orderedCases.every(c => isCompleted(c.id));
+
+  const currentGuess = guessQueue[guessIdx % guessQueue.length];
+
+  // ── DAILY CHALLENGE (deterministic by date, from the fixed base pool) ──
+  const todayKey = dateKey();
+  const dailyCase = CASE_DB[dayNumber() % CASE_DB.length];
+  const dailyDoneToday = dailyCompleted.includes(todayKey);
+  const DAILY_BONUS = 150;
+  // consecutive-day daily streak
+  let dailyStreak = 0;
+  {
+    const set = new Set(dailyCompleted);
+    const cur = new Date();
+    if (!set.has(dateKey(cur))) cur.setDate(cur.getDate() - 1); // allow "yesterday" to keep streak alive today
+    while (set.has(dateKey(cur))) { dailyStreak++; cur.setDate(cur.getDate() - 1); }
+  }
+  const midFmt = (() => {
+    const t = Math.max(0, msToMidnight);
+    const h = Math.floor(t / 3600000), m = Math.floor((t % 3600000) / 60000), s = Math.floor((t % 60000) / 1000);
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  })();
+
+  // ── HANDLERS ──
+  const handleJoin = () => { if (nameInput.trim()) setUserName(nameInput.trim()); };
+
+  const startDaily = () => {
+    setDailyMode(true);
+    setDiffFilter("all"); setFwFilter("all");
+    setScreen("case");
+    resetCaseWorkspace();
+    pendingSelectRef.current = dailyCase.id;
+    setCaseIdx(0);
+  };
+
+  const resetCaseWorkspace = () => {
+    setCaseDone(false); setReviewing(null); setCaseAnswers({});
+    setShowHint({}); setHintUsed({});
+    setModelOpen(false);
+    setCaseTimerSec(CASE_DURATION); setCaseTimerRunning(false); caseAlertedRef.current = false;
+    clearInterval(caseTimerRef.current);
+  };
+
+  const handleAnswer = (qIdx, val) => {
+    setCaseAnswers(a => ({ ...a, [`${currentCase.id}-${qIdx}`]: val }));
+  };
+
+  const updateNote = (caseId, tab, val) => {
+    setNotes(n => ({ ...n, [caseId]: { ...(n[caseId] || {}), [tab]: val } }));
+  };
+
+  const selectCase = (id) => {
+    const idx = orderedCases.findIndex(c => c.id === id);
+    if (idx >= 0) { setCaseIdx(idx); resetCaseWorkspace(); }
+  };
+
+  const changeDiffFilter = (v) => { setDiffFilter(v); setCaseIdx(0); resetCaseWorkspace(); };
+  const changeFwFilter = (v) => { setFwFilter(v); setCaseIdx(0); resetCaseWorkspace(); };
+
+  const handleSubmitCase = async () => {
+    if (!currentCase) return;
+    setLoadingReview(true);
+    setCaseTimerRunning(false);
+    const elapsedSec = caseTimerSec < CASE_DURATION ? CASE_DURATION - caseTimerSec : null;
+    const reviews = {};
+    for (let i = 0; i < currentCase.questions.length; i++) {
+      const key = `${currentCase.id}-${i}`;
+      const ans = caseAnswers[key] || "";
+      reviews[i] = await getAIReview(currentCase.title, currentCase.questions[i].q, ans, currentCase.questions[i].rubric, reviewCtxRef.current);
+    }
+    setCaseReviews(r => ({ ...r, [currentCase.id]: reviews }));
+    setReviewing(currentCase.id);
+    setLoadingReview(false);
+    setCaseDone(true);
+
+    const avgScore = Object.values(reviews).reduce((a,b) => a + b.score, 0) / Object.values(reviews).length;
+    const pts = Math.round(avgScore * 50);
+    const hintsUsedCount = Object.keys(hintUsed).filter(k => k.startsWith(currentCase.id)).length;
+    const finalPts = Math.max(pts - hintsUsedCount * 30, 50);
+    setScore(s => s + finalPts);
+    setStreak(s => s + 1);
+    setCompletedCaseIds(ids => ids.includes(currentCase.id) ? ids : [...ids, currentCase.id]);
+    setHistory(h => [{
+      type: "case", id: currentCase.id, title: currentCase.title,
+      firm: currentCase.firm, fw: currentCase.fw, level: currentCase.level,
+      avgScore: Math.round(avgScore * 10) / 10,
+      pts: finalPts, hintsUsed: hintsUsedCount, elapsedSec,
+      ts: Date.now(), time: new Date().toLocaleTimeString()
+    }, ...h]);
+    // Daily challenge bonus
+    if (dailyMode && currentCase.id === dailyCase.id && !dailyDoneToday) {
+      setScore(s => s + DAILY_BONUS);
+      setDailyCompleted(list => list.includes(todayKey) ? list : [...list, todayKey]);
+      showToast(`Daily challenge complete — +${DAILY_BONUS} bonus XP`, "level");
+    } else {
+      showToast(`+${finalPts} XP earned`, "info");
+    }
+  };
+
+  const handleRevealModel = async () => {
+    setModelOpen(true);
+    if (modelAnswers[currentCase.id]) return;
+    setModelLoading(true);
+    const ans = await getModelAnswer(currentCase);
+    setModelAnswers(m => ({ ...m, [currentCase.id]: ans }));
+    setModelLoading(false);
+  };
+
+  const handleNextCase = () => { setDailyMode(false); setCaseIdx(i => i + 1); resetCaseWorkspace(); };
+
+  const handleGuessSubmit = async () => {
+    setGuessLoading(true);
+    clearInterval(timerRef.current);
+    setTimerRunning(false);
+    const rev = await getGuessReview(currentGuess.q, guessAnswer, currentGuess.answer, currentGuess.approach);
+    setGuessReview(rev);
+    setGuessLoading(false);
+    setRevealed(true);
+    const pts = Math.round((rev.accuracy_pct || 50) * 2);
+    setScore(s => s + pts);
+    setHistory(h => [{
+      type: "guess", id: currentGuess.id, question: currentGuess.q,
+      cat: currentGuess.cat, userAnswer: guessAnswer,
+      correctAnswer: currentGuess.answer, accuracy: rev.accuracy_pct,
+      pts, ts: Date.now(), time: new Date().toLocaleTimeString()
+    }, ...h]);
+  };
+
+  const handleNextGuess = () => {
+    setGuessIdx(i => i + 1);
+    setGuessAnswer(""); setGuessLogic(""); setGuessReview(null); setRevealed(false);
+    setTimerSec(120); setTimerRunning(false); clearInterval(timerRef.current);
+  };
+
+  const copyShareLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+    navigator.clipboard.writeText(url).catch(() => {});
+    setShareTooltip(true);
+    setTimeout(() => setShareTooltip(false), 2000);
+  };
+
+  const doResetProgress = async () => {
+    await store.delete(STORE_KEY).catch(() => {});
+    await store.delete(`lb:${userId}`, true).catch(() => {});
+    setScore(0); setStreak(0); setHistory([]); setCompletedCaseIds([]); setNotes({}); setExtraCases([]);
+    setDailyCompleted([]); setDailyMode(false); setPublishOptIn(false);
+    setCaseIdx(0); resetCaseWorkspace();
+    setGuessIdx(0); setGuessAnswer(""); setGuessLogic(""); setGuessReview(null); setRevealed(false);
+    setCaseReviews({}); setModelAnswers({});
+    setMockState("idle");
+    prevLevelRef.current = 1;
+    setShowResetModal(false);
+    showToast("Progress reset. Fresh start.", "info");
+  };
+
+  // ── SHARED LEADERBOARD ──
+  const myBoardEntry = () => ({
+    id: userId, name: userName, initials: myInitials, color: avatarColor,
+    score, streak, cases: completedCaseIds.length,
+    accuracy: history.length ? Math.round(history.filter(h => h.accuracy).reduce((a, b) => a + (b.accuracy || 0), 0) / Math.max(1, history.filter(h => h.accuracy).length)) : 0,
+    ts: Date.now(),
+  });
+  const refreshLeaderboard = useCallback(async () => {
+    setBoardLoading(true);
+    try {
+      const res = await store.list("lb:", true);
+      const keys = res?.keys || [];
+      const rows = [];
+      for (const k of keys) {
+        try { const r = await store.get(k, true); if (r?.value) rows.push(JSON.parse(r.value)); } catch { /* skip */ }
+      }
+      setSharedBoard(rows);
+    } catch { setSharedBoard([]); }
+    setBoardLoading(false);
+  }, []);
+  const publishScore = useCallback(async () => {
+    try { await store.set(`lb:${userId}`, JSON.stringify(myBoardEntry()), true); } catch { /* offline */ }
+  }, [userId, userName, myInitials, avatarColor, score, streak, completedCaseIds, history]);
+  const togglePublish = async () => {
+    const next = !publishOptIn;
+    setPublishOptIn(next);
+    if (next) { await publishScore(); await refreshLeaderboard(); }
+    else { await store.delete(`lb:${userId}`, true).catch(() => {}); await refreshLeaderboard(); }
+  };
+  // Keep my published entry fresh while opted in
+  useEffect(() => {
+    if (!hydrated || !publishOptIn || !userName) return;
+    publishScore();
+  }, [hydrated, publishOptIn, userName, score, streak, completedCaseIds, publishScore]);
+  // Load the board when the leaderboard tab opens
+  useEffect(() => {
+    if (screen === "dashboard" && dashTab === "leaderboard") refreshLeaderboard();
+  }, [screen, dashTab, refreshLeaderboard]);
+
+  // ── CASE GENERATOR ──
+  const runGenerator = async (params) => {
+    setGenLoading(true);
+    try {
+      const raw = await generateCase(params);
+      const id = `gen-${Date.now()}`;
+      const newCase = {
+        id,
+        firm: MBB_FIRMS.includes(raw.firm) ? raw.firm : MBB_FIRMS[Math.floor(Math.random() * 3)],
+        fw: params.fw,
+        level: Number(params.level),
+        type: "case",
+        generated: true,
+        title: raw.title || "Generated case",
+        situation: raw.situation || "",
+        exhibits: Array.isArray(raw.exhibits) ? raw.exhibits.filter(Boolean) : [],
+        questions: Array.isArray(raw.questions) && raw.questions.length
+          ? raw.questions.map(q => ({ q: q.q, rubric: Array.isArray(q.rubric) ? q.rubric : [] }))
+          : [{ q: "Structure your approach to this problem.", rubric: ["MECE structure", "Quantification", "Prioritization", "Clear recommendation"] }],
+        hints: Array.isArray(raw.hints) ? raw.hints : [],
+      };
+      setExtraCases(list => [newCase, ...list]);
+      if (raw.modelAnswer) setModelAnswers(m => ({ ...m, [id]: raw.modelAnswer }));
+      setGenOpen(false);
+      setGenLoading(false);
+      // Navigate to the new case
+      setDiffFilter("all"); setFwFilter("all");
+      setScreen("case");
+      setCaseIdx(0);
+      resetCaseWorkspace();
+      // Ensure it's selected once state settles
+      setTimeout(() => selectCaseById(id), 0);
+      showToast("New case generated.", "info");
+    } catch {
+      setGenLoading(false);
+      showToast("Could not generate a case. Try again.", "warn");
+    }
+  };
+  const selectCaseById = (id) => {
+    setCaseIdx(0);
+    setTimeout(() => {
+      setExtraCases(list => list); // no-op to keep ref
+    }, 0);
+    // selection resolved in effect below via pendingSelectRef
+    pendingSelectRef.current = id;
+  };
+  const pendingSelectRef = useRef(null);
+  useEffect(() => {
+    if (!pendingSelectRef.current) return;
+    const id = pendingSelectRef.current;
+    const pool = [...CASE_DB, ...extraCases];
+    const ordered = pool
+      .filter(c => true)
+      .sort((a, b) => (completedCaseIds.includes(a.id) ? 1 : 0) - (completedCaseIds.includes(b.id) ? 1 : 0));
+    const idx = ordered.findIndex(c => c.id === id);
+    if (idx >= 0) { setCaseIdx(idx); pendingSelectRef.current = null; }
+  }, [extraCases, completedCaseIds]);
+
+  const openGeneratorPrefilled = (fw, level) => {
+    setGenForm(f => ({ ...f, fw: fw || f.fw, level: level ? String(level) : f.level }));
+    setGenOpen(true);
+  };
+
+  // ── MOCK INTERVIEW ──
+  const startMock = () => {
+    const chosen = shuffle([...CASE_DB, ...extraCases]).slice(0, 3);
+    const steps = [];
+    chosen.forEach(c => c.questions.forEach((qq, qi) => steps.push({ c, qi, q: qq })));
+    mockScoringRef.current = false;
+    setMockCases(chosen); setMockSteps(steps); setMockStep(0); setMockAnswers({});
+    setMockOverallSec(MOCK_TOTAL); setMockQSec(MOCK_Q);
+    setMockReport(null); setMockReviewProgress(0);
+    setMockState("running");
+    setScreen("mock");
+  };
+
+  const setMockAnswer = (val) => {
+    const st = mockSteps[mockStep];
+    if (!st) return;
+    setMockAnswers(a => ({ ...a, [`${st.c.id}-${st.qi}`]: val }));
+  };
+
+  const finishMock = useCallback(async () => {
+    if (mockScoringRef.current) return;
+    mockScoringRef.current = true;
+    setMockState("scoring");
+    const steps = mockStepsRef.current;
+    const answers = mockAnswersRef.current;
+    const cases = mockCasesRef.current;
+    const reviews = [];
+    for (let i = 0; i < steps.length; i++) {
+      setMockReviewProgress(i + 1);
+      const st = steps[i];
+      const rev = await getAIReview(st.c.title, st.q.q, answers[`${st.c.id}-${st.qi}`] || "", st.q.rubric, reviewCtxRef.current);
+      reviews.push({ ...rev, caseId: st.c.id, caseTitle: st.c.title, q: st.q.q, qi: st.qi });
+    }
+    const agg = reviews.reduce((a, b) => a + b.score, 0) / (reviews.length || 1);
+    const perCase = cases.map(c => {
+      const rs = reviews.filter(r => r.caseId === c.id);
+      const avg = rs.reduce((a, b) => a + b.score, 0) / (rs.length || 1);
+      return { title: c.title, fw: c.fw, firm: c.firm, avg: Math.round(avg * 10) / 10 };
+    });
+    setMockReport({ reviews, agg: Math.round(agg * 10) / 10, perCase });
+    setMockState("report");
+    const xp = Math.round(agg * 80);
+    setScore(s => s + xp);
+    setStreak(s => s + 1);
+    setCompletedCaseIds(ids => {
+      const add = cases.map(c => c.id).filter(id => !ids.includes(id));
+      return add.length ? [...ids, ...add] : ids;
+    });
+    setHistory(h => [{
+      type: "mock", title: `Mock interview — ${cases.length} cases`,
+      avgScore: Math.round(agg * 10) / 10, pts: xp,
+      ts: Date.now(), time: new Date().toLocaleTimeString()
+    }, ...h]);
+  }, []);
+
+  const advanceMock = useCallback(() => {
+    setMockStep(prev => {
+      const next = prev + 1;
+      if (next >= mockStepsRef.current.length) { finishMockRef.current(); return prev; }
+      return next;
+    });
+    setMockQSec(MOCK_Q);
+  }, []);
+
+  // keep refs current for interval callbacks
+  useEffect(() => {
+    mockStepsRef.current = mockSteps;
+    mockAnswersRef.current = mockAnswers;
+    mockCasesRef.current = mockCases;
+    finishMockRef.current = finishMock;
+  });
+
+  // mock ticking
+  useEffect(() => {
+    if (mockState !== "running") return;
+    const iv = setInterval(() => {
+      setMockOverallSec(o => (o <= 1 ? 0 : o - 1));
+      setMockQSec(q => (q <= 1 ? 0 : q - 1));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [mockState]);
+
+  // mock reactions to zero
+  useEffect(() => {
+    if (mockState !== "running") return;
+    if (mockOverallSec === 0) { ding(); finishMock(); return; }
+    if (mockQSec === 0) { ding(); advanceMock(); }
+  }, [mockOverallSec, mockQSec, mockState, finishMock, advanceMock]);
+
+  const downloadMockReport = () => {
+    if (!mockReport) return;
+    const lines = [];
+    lines.push(`# CaseIQ Mock Interview Report`);
+    lines.push(`Candidate: ${userName}`);
+    lines.push(`Date: ${new Date().toLocaleString()}`);
+    lines.push(`Aggregate score: ${mockReport.agg}/10`);
+    lines.push(``);
+    lines.push(`## Case breakdown`);
+    mockReport.perCase.forEach(pc => lines.push(`- ${pc.title} (${pc.firm} · ${pc.fw}): ${pc.avg}/10`));
+    lines.push(``);
+    lines.push(`## Question-by-question feedback`);
+    mockReport.reviews.forEach((r, i) => {
+      lines.push(``);
+      lines.push(`### Q${i + 1} — ${r.caseTitle} (${r.score}/10, ${r.verdict})`);
+      lines.push(`Question: ${r.q}`);
+      lines.push(`Strengths: ${(r.strengths || []).join("; ")}`);
+      lines.push(`Gaps: ${(r.gaps || []).join("; ")}`);
+      lines.push(`Partner note: ${r.brutalhonesty || ""}`);
+      lines.push(`Next time: ${r.nexttime || ""}`);
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `caseiq-mock-${Date.now()}.md`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const timerFmt = `${String(Math.floor(timerSec/60)).padStart(2,"0")}:${String(timerSec%60).padStart(2,"0")}`;
+  const caseTimerFmt = `${String(Math.floor(caseTimerSec/60)).padStart(2,"0")}:${String(caseTimerSec%60).padStart(2,"0")}`;
+  const caseFrac = caseTimerSec / CASE_DURATION;
+  const caseTimerColor = caseFrac > 0.5 ? "#2E7D52" : caseFrac > 0.25 ? "#C9860A" : caseFrac > 0.1 ? "#D2691E" : "#C23B22";
+
+  // ── ANALYTICS DATA ──
+  const caseHistory = history.filter(h => h.type === "case");
+  const chrono = [...caseHistory].reverse();
+  const scoreTrend = chrono.map((h, i) => ({ name: i + 1, score: h.avgScore }));
+  const fwGroups = {};
+  caseHistory.forEach(h => { (fwGroups[h.fw] = fwGroups[h.fw] || []).push(h.avgScore); });
+  const fwBreakdown = Object.entries(fwGroups).map(([k, v]) => ({ name: k.replace(" / Due Diligence", ""), score: Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 }));
+  const diffGroups = {};
+  caseHistory.forEach(h => { (diffGroups[h.level] = diffGroups[h.level] || []).push(h.avgScore); });
+  const diffBreakdown = [1, 2, 3].filter(l => diffGroups[l]).map(l => ({ name: DIFF_LABEL[l], score: Math.round((diffGroups[l].reduce((a, b) => a + b, 0) / diffGroups[l].length) * 10) / 10 }));
+  const completionData = [
+    { name: "Completed", value: completedCaseIds.length },
+    { name: "Remaining", value: Math.max(0, casePool.length - completedCaseIds.length) },
+  ];
+  const times = caseHistory.map(h => h.elapsedSec).filter(t => typeof t === "number");
+  const avgTimeSec = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
+  const avgTimeFmt = avgTimeSec != null ? `${Math.floor(avgTimeSec / 60)}m ${String(avgTimeSec % 60).padStart(2, "0")}s` : "—";
+  const dayMap = {};
+  history.forEach(h => { if (h.ts) { const d = new Date(h.ts); const key = `${d.getMonth() + 1}/${d.getDate()}`; dayMap[key] = (dayMap[key] || 0) + 1; } });
+  const activityData = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = `${d.getMonth() + 1}/${d.getDate()}`;
+    activityData.push({ name: key, count: dayMap[key] || 0 });
+  }
+  const hasAnalytics = caseHistory.length > 0;
+
+  // ── WEAKNESS + SPARKLINES ──
+  const fwSeries = {};
+  chrono.forEach(h => { (fwSeries[h.fw] = fwSeries[h.fw] || []).push(h.avgScore); });
+  const fwSparklines = Object.entries(fwSeries).map(([fw, series]) => ({
+    fw, series,
+    avg: series.reduce((a, b) => a + b, 0) / series.length,
+    delta: series.length > 1 ? series[series.length - 1] - series[0] : 0,
+  }));
+  let weakest = null;
+  if (fwBreakdown.length) {
+    const w = [...fwBreakdown].sort((a, b) => a.score - b.score)[0];
+    const wFull = FRAMEWORK_POOL.find(f => f.replace(" / Due Diligence", "") === w.name) || w.name;
+    const wDiff = diffBreakdown.length ? [...diffBreakdown].sort((a, b) => a.score - b.score)[0] : null;
+    const wLevel = wDiff ? Number(Object.keys(DIFF_LABEL).find(k => DIFF_LABEL[k] === wDiff.name)) : 2;
+    weakest = { fw: wFull, fwShort: w.name, score: w.score, diff: wDiff ? wDiff.name : null, level: wLevel };
+  }
+  const practiceWeakness = () => {
+    if (!weakest) return;
+    runGenerator({ fw: weakest.fw, level: String(weakest.level || 2), industry: "", geo: "", size: "Any size", func: "" });
+  };
+
+  // Personalization context for AI reviews (updated each render)
+  reviewCtxRef.current = (() => {
+    if (!caseHistory.length) return "";
+    const recent = caseHistory.slice(0, 5).map(h => h.avgScore);
+    const recentAvg = (recent.reduce((a, b) => a + b, 0) / recent.length).toFixed(1);
+    const parts = [`They have completed ${completedCaseIds.length} cases; recent average ${recentAvg}/10.`];
+    if (weakest) parts.push(`Weakest framework: ${weakest.fwShort} (${weakest.score}/10)${weakest.diff ? `; weakest on ${weakest.diff} cases` : ""}.`);
+    return parts.join(" ");
+  })();
+
+  // ── ACHIEVEMENTS ──
+  const achieveStats = {
+    cases: completedCaseIds.length,
+    bestCase: caseHistory.reduce((m, h) => Math.max(m, h.avgScore || 0), 0),
+    streak,
+    guesses: history.filter(h => h.type === "guess").length,
+    frameworks: new Set(caseHistory.map(h => h.fw)).size,
+    mocks: history.filter(h => h.type === "mock").length,
+    bestMock: history.filter(h => h.type === "mock").reduce((m, h) => Math.max(m, h.avgScore || 0), 0),
+    dailyStreak,
+    generated: extraCases.length,
+    level: levelInfo.level,
+    baseCleared: CASE_DB.every(c => completedCaseIds.includes(c.id)),
+  };
+  const currentlyUnlocked = ACHIEVEMENTS.filter(a => a.check(achieveStats)).map(a => a.id);
+  const submitActionRef = useRef(() => {});
+  useEffect(() => {
+    submitActionRef.current = () => {
+      if (screen === "case" && !caseDone && !loadingReview && currentCase) handleSubmitCase();
+      else if (screen === "guesstimate" && !revealed && !guessLoading) handleGuessSubmit();
+    };
+  });
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitActionRef.current(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    if (!hydrated) return;
+    const fresh = currentlyUnlocked.filter(id => !unlockedAchievements.includes(id));
+    if (fresh.length) {
+      setUnlockedAchievements(prev => [...new Set([...prev, ...fresh])]);
+      const first = ACHIEVEMENTS.find(a => a.id === fresh[0]);
+      if (first) showToast(`Achievement unlocked — ${first.title}`, "level");
+      fireConfetti();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentlyUnlocked.join(","), hydrated]);
+
+  // ── HYDRATION GATE ──
+  if (!hydrated) return (
+    <div style={S.loginWrap}>
+      <div style={{ textAlign:"center", color:"#8A8480" }}>
+        <div style={S.loginLogo}>Case<span style={{color:"#C9A84C"}}>IQ</span></div>
+        <div style={S.spinner} />
+        <div style={{ fontSize:"0.85rem", marginTop:12 }}>Loading your progress</div>
+      </div>
+    </div>
+  );
+
+  // ── RENDER LOGIN ──
+  if (!userName) return (
+    <div style={S.loginWrap}>
+      <div style={S.loginCard}>
+        <div style={S.loginLogo}>Case<span style={{color:"#C9A84C"}}>IQ</span></div>
+        <div style={S.loginSub}>MBB-inspired consulting simulator</div>
+        <div style={S.loginAvatarRow}>
+          {COLORS.slice(0,4).map((c,i) => (
+            <div key={i} style={{...S.loginAvatar, background: c}} />
+          ))}
+        </div>
+        <input
+          style={S.loginInput}
+          placeholder="Enter your name to begin"
+          value={nameInput}
+          onChange={e => setNameInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleJoin()}
+        />
+        <button style={S.loginBtn} onClick={handleJoin}>Enter the arena</button>
+        {collabMode && (
+          <div style={S.collabBadge}>Joining room {roomCode}</div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── RENDER MAIN ──
+  return (
+    <div style={S.root}>
+      {/* ── NAV ── */}
+      <nav style={S.nav}>
+        <div style={S.navLeft}>
+          <div style={S.logo}>Case<span style={{color:"#C9A84C"}}>IQ</span></div>
+          <div style={S.navLinks}>
+            {[["home","Home"],["case","Cases"],["mock","Mock"],["guesstimate","Guesstimates"],["history","History"],["dashboard","Dashboard"]].map(([id,label]) => (
+              <button key={id} style={{...S.navLink, ...(screen===id?S.navLinkActive:{})}} onClick={() => setScreen(id)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={S.navRight}>
+          <div style={S.levelChip} title={`${levelInfo.title} · ${score} XP`}>Lv {levelInfo.level} · {levelInfo.title}</div>
+          <div style={S.scoreChip}>{score} XP</div>
+          {streak > 0 && <div style={S.streakChip}>Streak {streak}</div>}
+          <div style={{position:"relative"}}>
+            <button style={S.collabBtn} onClick={copyShareLink}>
+              Share {shareTooltip && <span style={S.copiedBadge}>Copied</span>}
+            </button>
+          </div>
+          {roomPresence.filter(u => u.online && !u.self).slice(0,2).map((u,i) => (
+            <div key={i} style={{...S.avatarPill, background: u.color}} title={u.name}>{u.initials}</div>
+          ))}
+          <div style={{...S.avatarPill, background: avatarColor}} title={userName}>{myInitials}</div>
+          <div style={S.navUser}>{userName}</div>
+        </div>
+      </nav>
+
+      {/* ── HOME ── */}
+      {screen === "home" && (
+        <div style={S.homeWrap}>
+          <div style={S.heroSection} className="caseiq-hero">
+            <div style={S.heroLeft}>
+              <div style={S.eyebrow}>MBB case simulator · {casePool.length} cases · {GUESS_DB.length} guesstimates</div>
+              <h1 style={S.heroH1}>Think like a<br/><em style={{color:"#C9A84C",fontStyle:"normal"}}>top consultant</em></h1>
+              <p style={S.heroP}>Real McKinsey, BCG and Bain scenarios, with AI partner reviews, model answers, a working scratchpad, and a full 60-minute mock interview. No fluff — just the real work.</p>
+              <div style={S.heroBtns}>
+                <button style={S.btnPrimary} onClick={() => setScreen("case")}>Start a case</button>
+                <button style={S.btnSecondary} onClick={() => setScreen("mock")}>Full mock interview</button>
+              </div>
+            </div>
+            <div style={S.heroRight}>
+              <div style={S.statsGrid}>
+                {[
+                  {label:"Total cases",val:casePool.length},
+                  {label:"Completed",val:completedCaseIds.length},
+                  {label:"Your XP",val:score},
+                  {label:"Streak",val:streak},
+                ].map((s,i) => (
+                  <div key={i} style={S.statCard}>
+                    <div style={S.statVal}>{s.val}</div>
+                    <div style={S.statLabel}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={S.fwPreview}>
+                <div style={S.fwPreviewTitle}>Level {levelInfo.level} · {levelInfo.title}</div>
+                <div style={S.levelBarTrack}>
+                  <div style={{...S.levelBarFill, width:`${levelInfo.pct}%`}} />
+                </div>
+                <div style={S.levelBarMeta}>
+                  {levelInfo.isMax ? "Max level reached" : `${score - levelInfo.floor} / ${levelInfo.ceil - levelInfo.floor} XP to Lv ${levelInfo.level + 1}`}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Daily challenge */}
+          <div style={S.dailyCard}>
+            <div style={S.dailyLeft}>
+              <div style={S.dailyHead}>
+                <span style={S.dailyBadge}>Daily challenge</span>
+                {dailyStreak > 0 && <span style={S.dailyStreakChip}>{dailyStreak}-day daily streak</span>}
+                <span style={S.dailyCountdown}>Resets in {midFmt}</span>
+              </div>
+              <div style={S.dailyTitle}>{dailyCase.title}</div>
+              <div style={S.dailyMeta}>
+                <span style={{...S.firmBadge, background: dailyCase.firm==="McKinsey"?"#EAF0FB":dailyCase.firm==="BCG"?"#FEF0EE":"#EAFAF1", color: dailyCase.firm==="McKinsey"?"#1B4B8A":dailyCase.firm==="BCG"?"#C23B22":"#2E7D52"}}>{dailyCase.firm}</span>
+                <span style={S.fwTag}>{dailyCase.fw}</span>
+                <span style={S.levelTag}>{DIFF_LABEL[dailyCase.level]}</span>
+                <span style={S.dailyBonusTag}>+{DAILY_BONUS} bonus XP</span>
+              </div>
+            </div>
+            <div style={S.dailyRight}>
+              {dailyDoneToday ? (
+                <div style={S.dailyDoneBadge}>Completed today ✓</div>
+              ) : (
+                <button style={S.btnPrimary} onClick={startDaily}>Start today's challenge</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CASE ── */}
+      {screen === "case" && (
+        <div style={S.pageWrap}>
+          {/* Filter bar */}
+          <div style={S.filterBar}>
+            <div style={S.filterGroup}>
+              <span style={S.filterLabel}>Difficulty</span>
+              <div style={S.segmented}>
+                {[["all","All"],["1","Beginner"],["2","Intermediate"],["3","Advanced"]].map(([v,l]) => (
+                  <button key={v} style={{...S.segBtn, ...(diffFilter===v?S.segBtnActive:{})}} onClick={() => changeDiffFilter(v)}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div style={S.filterGroup}>
+              <span style={S.filterLabel}>Framework</span>
+              <select style={S.fwSelect} value={fwFilter} onChange={e => changeFwFilter(e.target.value)}>
+                <option value="all">All frameworks</option>
+                {FRAMEWORK_POOL.map(fw => <option key={fw} value={fw}>{fw}</option>)}
+              </select>
+            </div>
+            <div style={{...S.filterGroup, marginLeft:"auto"}}>
+              <span style={S.filterLabel}>&nbsp;</span>
+              <button style={S.genBtn} onClick={() => setGenOpen(true)}>Generate a new case</button>
+            </div>
+          </div>
+
+          {/* Case picker list */}
+          {orderedCases.length > 0 && (
+            <div style={S.pickerRow}>
+              {orderedCases.map((c, i) => (
+                <button
+                  key={c.id}
+                  style={{...S.pickerChip, ...(i===safeIdx ? S.pickerChipActive : {}), ...(isCompleted(c.id) ? S.pickerChipDone : {})}}
+                  onClick={() => selectCase(c.id)}
+                  title={c.title}
+                >
+                  {isCompleted(c.id) && <span style={{marginRight:5, color:"#2E7D52"}}>✓</span>}
+                  {c.title}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {orderedCases.length === 0 ? (
+            <div style={S.emptyState}>No cases match these filters. Try a different difficulty or framework.</div>
+          ) : (
+            <>
+              {allInFilterDone && (
+                <div style={S.doneBanner}>
+                  You've completed every case in this filter. Revisit one below, change the filter, or{" "}
+                  <button style={S.inlineLinkBtn} onClick={() => openGeneratorPrefilled(fwFilter !== "all" ? fwFilter : undefined, diffFilter !== "all" ? diffFilter : undefined)}>
+                    generate a fresh one
+                  </button>.
+                </div>
+              )}
+
+              <div style={S.caseHeader}>
+                <div style={S.caseHeaderLeft}>
+                  <span style={{...S.firmBadge, background: currentCase.firm==="McKinsey"?"#EAF0FB":currentCase.firm==="BCG"?"#FEF0EE":"#EAFAF1", color: currentCase.firm==="McKinsey"?"#1B4B8A":currentCase.firm==="BCG"?"#C23B22":"#2E7D52"}}>
+                    {currentCase.firm}
+                  </span>
+                  <span style={S.fwTag}>{currentCase.fw}</span>
+                  <span style={S.levelTag}>{DIFF_LABEL[currentCase.level]}</span>
+                  <span style={S.caseCounter}>Case {safeIdx + 1} of {orderedCases.length}</span>
+                  {dailyMode && currentCase.id === dailyCase.id && <span style={S.dailyInlineTag}>Daily · +{DAILY_BONUS} XP</span>}
+                  {currentCase.generated && <span style={S.genTag}>AI-generated</span>}
+                  {isCompleted(currentCase.id) && <span style={S.seenTag}>Completed</span>}
+                </div>
+                {!caseDone && (
+                  <button style={S.btnGhost} onClick={handleNextCase}>Next case</button>
+                )}
+              </div>
+
+              <h2 style={S.caseTitle}>{currentCase.title}</h2>
+
+              {/* Case timer */}
+              <div style={S.timerCard}>
+                <svg width="64" height="64" viewBox="0 0 64 64" style={{flexShrink:0}}>
+                  <circle cx="32" cy="32" r="26" fill="none" stroke="#EFEAE2" strokeWidth="6" />
+                  <circle
+                    cx="32" cy="32" r="26" fill="none" stroke={caseTimerColor} strokeWidth="6"
+                    strokeLinecap="round" transform="rotate(-90 32 32)"
+                    strokeDasharray={2 * Math.PI * 26}
+                    strokeDashoffset={2 * Math.PI * 26 * (1 - caseFrac)}
+                    style={{ transition: "stroke-dashoffset 0.9s linear, stroke 0.4s ease" }}
+                  />
+                </svg>
+                <div style={S.timerInfo}>
+                  <div style={{...S.timerBig, color: caseTimerColor}}>{caseTimerFmt}</div>
+                  <div style={S.timerSub}>20-minute case clock</div>
+                </div>
+                <div style={S.timerControls}>
+                  <button style={S.timerCtrlBtn} onClick={() => setCaseTimerRunning(r => !r)} disabled={caseTimerSec===0 || caseDone}>
+                    {caseTimerRunning ? "Pause" : caseTimerSec === CASE_DURATION ? "Start" : "Resume"}
+                  </button>
+                  <button style={S.timerCtrlBtnGhost} onClick={() => { setCaseTimerSec(CASE_DURATION); setCaseTimerRunning(false); caseAlertedRef.current = false; }}>
+                    Restart
+                  </button>
+                </div>
+              </div>
+
+              <div style={S.situationBox}>
+                <div style={S.situationLabel}>The situation</div>
+                <p style={S.situationText}>{currentCase.situation}</p>
+                {currentCase.exhibits && currentCase.exhibits.length > 0 && (
+                  <div style={S.exhibitBox}>
+                    <div style={S.exhibitLabel}>Exhibits</div>
+                    {currentCase.exhibits.map((ex, i) => (
+                      <div key={i} style={S.exhibitRow}><span style={S.exhibitNum}>E{i + 1}</span><span>{ex}</span></div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Notes panel */}
+              <div style={S.notesWrap}>
+                <button style={S.notesToggle} onClick={() => setNotesOpen(o => !o)}>
+                  <span>Scratchpad</span>
+                  <span style={S.notesToggleHint}>{notesOpen ? "Hide" : "Open"} · auto-saved</span>
+                </button>
+                {notesOpen && (
+                  <div style={S.notesBody}>
+                    <div style={S.noteTabs}>
+                      {NOTE_TABS.map(([key, label]) => (
+                        <button key={key} style={{...S.noteTab, ...(noteTab===key?S.noteTabActive:{})}} onClick={() => setNoteTab(key)}>{label}</button>
+                      ))}
+                    </div>
+                    {NOTE_TABS.filter(([k]) => k === noteTab).map(([key, label, ph]) => (
+                      <div key={key} style={S.noteEditorWrap}>
+                        <textarea
+                          style={{...S.noteEditor, fontFamily: key === "calcs" ? "monospace" : "'Georgia',serif"}}
+                          placeholder={ph}
+                          value={(notes[currentCase.id] && notes[currentCase.id][key]) || ""}
+                          onChange={e => updateNote(currentCase.id, key, e.target.value)}
+                        />
+                      </div>
+                    ))}
+                    <div style={S.notesFoot}>Drag the bottom-right corner to resize. Notes save automatically per case.</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Collab panel */}
+              {collabMode && (
+                <div style={S.collabPanel}>
+                  <div style={S.collabPanelTitle}>Collaborative room {roomCode}</div>
+                  <div style={S.collabUsers}>
+                    {roomPresence.length === 0 ? (
+                      <div style={S.collabUserName}>Connecting…</div>
+                    ) : roomPresence.map((u, i) => (
+                      <div key={i} style={S.collabUser}>
+                        <div style={{...S.collabAvatar, background: u.color}}>{u.initials}</div>
+                        <div style={S.collabUserName}>{u.name}{u.self ? " (you)" : ""}</div>
+                        <div style={{...S.onlineDot, background: "#2E7D52"}} />
+                      </div>
+                    ))}
+                    <button style={S.addCollabBtn} onClick={copyShareLink}>Invite</button>
+                  </div>
+                  <div style={S.collabNote}>
+                    Presence is live — anyone who opens this room link appears here within a few seconds. Live chat, a shared timer and synced notes need the hosted (backend) version.
+                  </div>
+                </div>
+              )}
+
+              {/* Questions */}
+              {!reviewing && currentCase.questions.map((qItem, qIdx) => {
+                const key = `${currentCase.id}-${qIdx}`;
+                const hintKey = `${currentCase.id}-${qIdx}`;
+                return (
+                  <div key={qIdx} style={S.questionCard}>
+                    <div style={S.questionNum}>Q{qIdx+1}</div>
+                    <p style={S.questionText}>{qItem.q}</p>
+                    {currentCase.level >= 2 && (
+                      <div style={S.hintRow}>
+                        {!showHint[hintKey] ? (
+                          <button style={S.hintBtn} onClick={() => {
+                            setShowHint(h => ({...h, [hintKey]: true}));
+                            setHintUsed(h => ({...h, [hintKey]: true}));
+                          }}>
+                            Show hint <span style={S.hintCost}>−30 XP</span>
+                          </button>
+                        ) : (
+                          <div style={S.hintBox}><strong>Hint:</strong> {currentCase.hints[qIdx] || currentCase.hints[0]}</div>
+                        )}
+                      </div>
+                    )}
+                    <textarea
+                      style={S.answerArea}
+                      placeholder="Type your structured answer here. Start with your framework, then your analysis."
+                      value={caseAnswers[key] || ""}
+                      onChange={e => handleAnswer(qIdx, e.target.value)}
+                      disabled={caseDone}
+                      rows={5}
+                    />
+                    <div style={S.rubricRow}>
+                      {qItem.rubric.map((r,i) => <span key={i} style={S.rubricChip}>{r}</span>)}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Reviews */}
+              {reviewing === currentCase.id && caseReviews[currentCase.id] && (
+                <div style={S.reviewSection}>
+                  <h3 style={S.reviewSectionTitle}>AI partner review</h3>
+                  {currentCase.questions.map((qItem, qIdx) => {
+                    const rev = caseReviews[currentCase.id][qIdx];
+                    if (!rev) return null;
+                    const scoreColor = rev.score >= 8 ? "#2E7D52" : rev.score >= 5 ? "#C9860A" : "#C23B22";
+                    return (
+                      <div key={qIdx} style={S.reviewCard}>
+                        <div style={S.reviewCardTop}>
+                          <div style={S.reviewQ}>Q{qIdx+1}: {qItem.q.substring(0,60)}…</div>
+                          <div style={{...S.reviewScore, color: scoreColor}}>{rev.score}/10</div>
+                        </div>
+                        <div style={{...S.verdictBadge, background: rev.score >= 7 ? "#EAFAF1" : rev.score >= 5 ? "#FBF5E0" : "#FEF0EE", color: scoreColor}}>
+                          {rev.verdict}
+                        </div>
+                        <div style={S.reviewGrid}>
+                          <div>
+                            <div style={S.reviewSubhead}>What worked</div>
+                            {rev.strengths?.map((s,i) => <div key={i} style={S.reviewPoint}>— {s}</div>)}
+                          </div>
+                          <div>
+                            <div style={S.reviewSubhead}>What's missing</div>
+                            {rev.gaps?.map((g,i) => <div key={i} style={S.reviewPoint}>— {g}</div>)}
+                          </div>
+                        </div>
+                        <div style={S.brutalBox}>
+                          <strong>Brutal honesty:</strong> {rev.brutalhonesty}
+                        </div>
+                        <div style={S.nextTimeBox}>
+                          <strong>Next time:</strong> {rev.nexttime}
+                        </div>
+                        {rev.improvementPlan && (
+                          <div style={S.planBox}>
+                            <strong>Your drill:</strong> {rev.improvementPlan}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Model answer reveal */}
+                  <div style={S.modelWrap}>
+                    {!modelOpen ? (
+                      <button style={S.modelRevealBtn} onClick={handleRevealModel}>
+                        Reveal the model answer
+                      </button>
+                    ) : modelLoading || !modelAnswers[currentCase.id] ? (
+                      <div style={S.modelLoading}><div style={S.spinnerSm} /> Writing the senior-partner solution</div>
+                    ) : (
+                      <div style={S.modelCard}>
+                        <div style={S.modelTitle}>Model answer — how a senior partner would solve it</div>
+                        {(() => {
+                          const m = modelAnswers[currentCase.id];
+                          return (
+                            <>
+                              <div style={S.modelSec}><div style={S.modelSecLabel}>Recommended framework</div><p style={S.modelText}>{m.framework}</p></div>
+                              <div style={S.modelSec}>
+                                <div style={S.modelSecLabel}>MECE issue tree</div>
+                                {m.issueTree?.map((b, i) => (
+                                  <div key={i} style={S.treeBranch}><span style={S.treeMarker}>{i+1}</span><span style={S.treeText}>{b}</span></div>
+                                ))}
+                              </div>
+                              <div style={S.modelSec}><div style={S.modelSecLabel}>Key calculations</div><p style={{...S.modelText, fontFamily:"monospace", fontSize:"0.82rem"}}>{m.calculations}</p></div>
+                              <div style={S.modelSec}><div style={S.modelSecLabel}>Recommendation</div><p style={S.modelText}>{m.recommendation}</p></div>
+                              <div style={S.modelTwoCol}>
+                                <div>
+                                  <div style={S.modelSecLabel}>Risks</div>
+                                  {m.risks?.map((r,i) => <div key={i} style={S.modelPoint}>— {r}</div>)}
+                                </div>
+                                <div>
+                                  <div style={S.modelSecLabel}>Next steps</div>
+                                  {m.nextSteps?.map((r,i) => <div key={i} style={S.modelPoint}>— {r}</div>)}
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div style={S.caseActions}>
+                {!caseDone ? (
+                  <button
+                    style={{...S.btnPrimary, opacity: loadingReview ? 0.7 : 1}}
+                    onClick={handleSubmitCase}
+                    disabled={loadingReview}
+                    aria-label="Submit answers for AI review"
+                  >
+                    {loadingReview ? "Getting AI review" : "Submit for review"}
+                  </button>
+                ) : (
+                  <button style={S.btnPrimary} onClick={handleNextCase}>
+                    Next case
+                  </button>
+                )}
+              </div>
+              {!caseDone && <div style={S.shortcutHint}>Tip: press ⌘/Ctrl + Enter to submit</div>}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── GUESSTIMATE ── */}
+      {screen === "guesstimate" && (
+        <div style={S.pageWrap}>
+          <div style={S.guessHeader}>
+            <div>
+              <div style={S.guessEyebrow}>Guesstimate arena</div>
+              <h2 style={S.guessTitle}>{currentGuess.q}</h2>
+              <div style={S.guessMeta}>
+                <span style={S.catChip}>{currentGuess.cat}</span>
+                <span style={S.guessCounter}>#{(guessIdx % GUESS_DB.length) + 1} of {GUESS_DB.length}</span>
+              </div>
+            </div>
+            <div style={S.timerBlock}>
+              <div style={{...S.timerDisplay, color: timerSec <= 30 ? "#C23B22" : "#1A1714", borderColor: timerSec <= 30 ? "#F5C6BC" : "#E2DDD6"}}>
+                {timerFmt}
+              </div>
+              <button style={S.timerBtn} onClick={() => { setTimerSec(120); setTimerRunning(true); }}>
+                {timerRunning ? "Running" : "Start timer"}
+              </button>
+            </div>
+          </div>
+
+          {!revealed && (
+            <div style={S.guessHintBox}>
+              <strong>Approach hint:</strong> {currentGuess.hint}
+            </div>
+          )}
+
+          <div style={S.guessInputBlock}>
+            <div style={S.guessInputRow}>
+              <div style={S.guessLabel}>My estimate</div>
+              <input
+                style={S.guessInput}
+                placeholder="e.g. ₹8,000 crore or 1.5 billion"
+                value={guessAnswer}
+                onChange={e => setGuessAnswer(e.target.value)}
+                disabled={revealed}
+              />
+            </div>
+            <div style={S.guessInputRow}>
+              <div style={S.guessLabel}>My logic</div>
+              <input
+                style={S.guessInput}
+                placeholder="e.g. 1.4B people × 20% urban × ₹500 avg spend"
+                value={guessLogic}
+                onChange={e => setGuessLogic(e.target.value)}
+                disabled={revealed}
+              />
+            </div>
+          </div>
+
+          {!revealed && (
+            <div style={S.guessActions}>
+              <button style={{...S.btnPrimary, opacity: guessLoading ? 0.7 : 1}} onClick={handleGuessSubmit} disabled={guessLoading}>
+                {guessLoading ? "Reviewing" : "Check my answer"}
+              </button>
+              <button style={S.btnGhost} onClick={handleNextGuess}>Skip</button>
+            </div>
+          )}
+
+          {revealed && guessReview && (
+            <div style={S.guessResultBlock}>
+              <div style={S.guessResultTop}>
+                <div>
+                  <div style={S.guessAnswerLabel}>Model answer</div>
+                  <div style={S.guessAnswerVal}>{currentGuess.answer}</div>
+                </div>
+                <div style={{...S.accuracyCircle, borderColor: guessReview.accuracy_pct >= 70 ? "#2E7D52" : guessReview.accuracy_pct >= 45 ? "#C9860A" : "#C23B22", color: guessReview.accuracy_pct >= 70 ? "#2E7D52" : guessReview.accuracy_pct >= 45 ? "#C9860A" : "#C23B22"}}>
+                  {guessReview.accuracy_pct}%
+                </div>
+              </div>
+              <div style={S.guessBreakdown}>{currentGuess.breakdown}</div>
+              <div style={S.guessFeedback}>
+                <strong>{guessReview.verdict}:</strong> {guessReview.feedback}
+              </div>
+              <div style={S.guessImprove}>
+                <strong>Sharpen:</strong> {guessReview.improvement}
+              </div>
+              <button style={S.btnPrimary} onClick={handleNextGuess}>Next guesstimate</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── HISTORY ── */}
+      {screen === "history" && (
+        <div style={S.pageWrap}>
+          <h2 style={S.pageTitle}>Your history</h2>
+          {history.length === 0 ? (
+            <div style={S.emptyState}>No activity yet — solve a case or guesstimate to see your history here.</div>
+          ) : (
+            <div style={S.historyList}>
+              {history.map((h, i) => (
+                <div key={i} style={S.historyCard}>
+                  <div style={S.historyLeft}>
+                    <div style={{...S.historyType, background: h.type==="mock" ? "#EDE7FB" : h.type==="case" ? "#EAF0FB" : "#FBF5E0", color: h.type==="mock" ? "#5A3FA0" : h.type==="case" ? "#1B4B8A" : "#9A7A1A"}}>
+                      {h.type === "mock" ? "Mock interview" : h.type === "case" ? "Case" : "Guesstimate"}
+                    </div>
+                    <div style={S.historyTitle}>{h.title || h.question?.substring(0,60)+"…"}</div>
+                    <div style={S.historyMeta}>
+                      {h.firm && <span style={S.historyMetaChip}>{h.firm}</span>}
+                      {h.fw && <span style={S.historyMetaChip}>{h.fw}</span>}
+                      {h.cat && <span style={S.historyMetaChip}>{h.cat}</span>}
+                      {h.level && <span style={S.historyMetaChip}>{DIFF_LABEL[h.level]}</span>}
+                      <span style={S.historyTime}>{h.time}</span>
+                    </div>
+                  </div>
+                  <div style={S.historyRight}>
+                    {(h.type==="case" || h.type==="mock") && (
+                      <div style={S.historyScore}>
+                        <div style={S.historyScoreVal}>{h.avgScore}/10</div>
+                        <div style={S.historyScoreLabel}>avg score</div>
+                      </div>
+                    )}
+                    {h.type==="guess" && (
+                      <div style={S.historyScore}>
+                        <div style={{...S.historyScoreVal, color: h.accuracy >= 70 ? "#2E7D52" : h.accuracy >= 45 ? "#C9860A" : "#C23B22"}}>{h.accuracy}%</div>
+                        <div style={S.historyScoreLabel}>accuracy</div>
+                      </div>
+                    )}
+                    <div style={S.historyPts}>+{h.pts} XP</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── DASHBOARD ── */}
+      {screen === "dashboard" && (
+        <div style={S.pageWrap}>
+          <div style={S.dashTitleRow}>
+            <div style={S.dashTabs}>
+              <button style={{...S.dashTabBtn, ...(dashTab==="leaderboard"?S.dashTabActive:{})}} onClick={() => setDashTab("leaderboard")}>Leaderboard</button>
+              <button style={{...S.dashTabBtn, ...(dashTab==="analytics"?S.dashTabActive:{})}} onClick={() => setDashTab("analytics")}>Analytics</button>
+              <button style={{...S.dashTabBtn, ...(dashTab==="awards"?S.dashTabActive:{})}} onClick={() => setDashTab("awards")}>Awards</button>
+            </div>
+            <div style={{display:"flex", gap:10}}>
+              <button style={S.soundBtn} onClick={() => setSoundOn(v => !v)} aria-pressed={soundOn} aria-label="Toggle sound alerts">
+                Sound {soundOn ? "on" : "off"}
+              </button>
+              <button style={S.resetBtn} onClick={() => setShowResetModal(true)}>Reset progress</button>
+            </div>
+          </div>
+
+          {dashTab === "awards" && (
+            <>
+              <div style={S.awardProgress}>
+                {unlockedAchievements.length} of {ACHIEVEMENTS.length} achievements unlocked.
+              </div>
+              <div style={S.awardsGrid}>
+                {ACHIEVEMENTS.map((a, i) => {
+                  const got = currentlyUnlocked.includes(a.id);
+                  const color = COLORS[i % COLORS.length];
+                  return (
+                    <div key={a.id} style={{...S.awardCard, ...(got ? {} : S.awardCardLocked)}}>
+                      <div style={{...S.awardMedal, background: got ? color : "#B8B2A8"}}>
+                        {got ? "✓" : a.title.split(" ").map(w => w[0]).slice(0, 2).join("")}
+                      </div>
+                      <div style={S.awardTitle}>{a.title}</div>
+                      <div style={S.awardDesc}>{a.desc}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {dashTab === "leaderboard" && (
+            <div style={S.lbWrap}>
+              <div>
+                <div style={S.lbControls}>
+                  <label style={S.lbToggle}>
+                    <input type="checkbox" checked={publishOptIn} onChange={togglePublish} style={{ cursor: "pointer" }} />
+                    Publish my score to the shared leaderboard
+                  </label>
+                  <button style={S.lbRefresh} onClick={refreshLeaderboard} disabled={boardLoading}>{boardLoading ? "Refreshing…" : "Refresh"}</button>
+                </div>
+                <div style={S.lbTable}>
+                  <div style={S.lbHeaderRow}>
+                    <div style={S.lbCell}>#</div>
+                    <div style={{...S.lbCell, flex:3}}>Player</div>
+                    <div style={S.lbCell}>Score</div>
+                    <div style={S.lbCell}>Cases</div>
+                    <div style={S.lbCell}>Accuracy</div>
+                    <div style={S.lbCell}>Streak</div>
+                  </div>
+                  {(() => {
+                    const self = { id: userId, name: userName, avatar: myInitials, color: avatarColor, score, streak, cases: completedCaseIds.length, accuracy: history.length ? Math.round(history.filter(h=>h.accuracy).reduce((a,b)=>a+(b.accuracy||0),0)/Math.max(1,history.filter(h=>h.accuracy).length)) : 0, self:true };
+                    const others = sharedBoard.filter(r => r.id !== userId).map(r => ({ ...r, avatar: r.initials || initials(r.name) }));
+                    const seeds = leaderboard.map(s => ({ ...s, seed:true }));
+                    const rows = [self, ...others, ...seeds].sort((a,b) => b.score - a.score);
+                    return rows.map((u, i) => (
+                      <div key={u.id || `seed-${i}`} style={{...S.lbRow, background: u.self ? "#FFFBF0" : i===0?"#FFFBF0":"transparent", borderLeft: i===0?"3px solid #C9A84C": u.self ? "3px solid #1B4B8A" : "3px solid transparent"}}>
+                        <div style={S.lbCell}>
+                          <span style={{fontFamily:"monospace", fontWeight:700, color: i===0?"#C9A84C":i===1?"#999":i===2?"#CD7F32":"#888"}}>
+                            {`#${i+1}`}
+                          </span>
+                        </div>
+                        <div style={{...S.lbCell, flex:3, gap:10}}>
+                          <div style={{...S.lbAvatar, background: u.color}}>{u.avatar}</div>
+                          <div style={{fontWeight: 600, fontSize:"0.9rem"}}>{u.name || "Anon"} {u.self && <span style={S.youBadge}>You</span>}{u.seed && <span style={S.seedBadge}>demo</span>}</div>
+                        </div>
+                        <div style={{...S.lbCell, fontWeight:700, fontFamily:"monospace"}}>{(u.score||0).toLocaleString()}</div>
+                        <div style={S.lbCell}>{u.cases}</div>
+                        <div style={{...S.lbCell, color: u.accuracy >= 70 ? "#2E7D52" : u.accuracy >= 45 ? "#C9860A" : "#C23B22", fontWeight:600}}>{u.accuracy}%</div>
+                        <div style={S.lbCell}>{u.streak}</div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+                <div style={S.lbFootNote}>
+                  This board is real, shared storage — published players appear across everyone using this artifact (eventually consistent, refresh to update). Rows marked "demo" are seeded examples. Your score is only shared while the toggle above is on.
+                </div>
+              </div>
+
+              <div style={S.dashRight}>
+                <div style={S.dashCard}>
+                  <div style={S.dashCardTitle}>Your level</div>
+                  <div style={{fontFamily:"'Georgia',serif", fontSize:"1.3rem", fontWeight:700, marginBottom:8}}>
+                    Lv {levelInfo.level} · {levelInfo.title}
+                  </div>
+                  <div style={S.levelBarTrack}>
+                    <div style={{...S.levelBarFill, width:`${levelInfo.pct}%`}} />
+                  </div>
+                  <div style={S.levelBarMeta}>
+                    {levelInfo.isMax ? "Max level reached" : `${score - levelInfo.floor} / ${levelInfo.ceil - levelInfo.floor} XP to next level`}
+                  </div>
+                </div>
+                <div style={S.dashCard}>
+                  <div style={S.dashCardTitle}>Your stats</div>
+                  {[
+                    ["Total XP", score],
+                    ["Cases completed", `${completedCaseIds.length} / ${casePool.length}`],
+                    ["Guesses done", history.filter(h=>h.type==="guess").length],
+                    ["Current streak", streak],
+                    ["Hints used", history.filter(h=>h.hintsUsed>0).length],
+                  ].map(([label,val],i) => (
+                    <div key={i} style={S.dashStatRow}>
+                      <span style={S.dashStatLabel}>{label}</span>
+                      <span style={S.dashStatVal}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {dashTab === "analytics" && (
+            !hasAnalytics ? (
+              <div style={S.emptyState}>Complete at least one case to unlock your analytics.</div>
+            ) : (
+              <>
+                <div style={S.kpiRow}>
+                  <div style={S.kpiCard}><div style={S.kpiVal}>{completedCaseIds.length}/{casePool.length}</div><div style={S.kpiLabel}>Cases completed</div></div>
+                  <div style={S.kpiCard}><div style={S.kpiVal}>{(caseHistory.reduce((a,b)=>a+b.avgScore,0)/caseHistory.length).toFixed(1)}</div><div style={S.kpiLabel}>Avg case score</div></div>
+                  <div style={S.kpiCard}><div style={S.kpiVal}>{avgTimeFmt}</div><div style={S.kpiLabel}>Avg time / case</div></div>
+                  <div style={S.kpiCard}><div style={S.kpiVal}>{streak}</div><div style={S.kpiLabel}>Current streak</div></div>
+                </div>
+
+                <div style={S.chartGrid}>
+                  <div style={S.chartCard}>
+                    <div style={S.chartTitle}>Score trend</div>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <LineChart data={scoreTrend} margin={{ top: 8, right: 12, bottom: 4, left: -18 }}>
+                        <CartesianGrid stroke="#F0EDE8" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#8A8480" }} axisLine={{ stroke: "#E2DDD6" }} tickLine={false} />
+                        <YAxis domain={[0, 10]} tick={{ fontSize: 11, fill: "#8A8480" }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E2DDD6", fontFamily: "Georgia, serif" }} />
+                        <Line type="monotone" dataKey="score" stroke={CHART.blue} strokeWidth={2.5} dot={{ r: 3, fill: CHART.blue }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div style={S.chartCard}>
+                    <div style={S.chartTitle}>Completion</div>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <PieChart>
+                        <Pie data={completionData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={78} paddingAngle={2}>
+                          <Cell fill={CHART.green} />
+                          <Cell fill={CHART.track} />
+                        </Pie>
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E2DDD6", fontFamily: "Georgia, serif" }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div style={S.pieCenterLabel}>{Math.round(completedCaseIds.length / casePool.length * 100)}% done</div>
+                  </div>
+
+                  <div style={S.chartCard}>
+                    <div style={S.chartTitle}>Average score by framework</div>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={fwBreakdown} margin={{ top: 8, right: 12, bottom: 4, left: -18 }}>
+                        <CartesianGrid stroke="#F0EDE8" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#8A8480" }} axisLine={{ stroke: "#E2DDD6" }} tickLine={false} interval={0} angle={-18} textAnchor="end" height={50} />
+                        <YAxis domain={[0, 10]} tick={{ fontSize: 11, fill: "#8A8480" }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E2DDD6", fontFamily: "Georgia, serif" }} />
+                        <Bar dataKey="score" fill={CHART.gold} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div style={S.chartCard}>
+                    <div style={S.chartTitle}>Performance by difficulty</div>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={diffBreakdown} margin={{ top: 8, right: 12, bottom: 4, left: -18 }}>
+                        <CartesianGrid stroke="#F0EDE8" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#8A8480" }} axisLine={{ stroke: "#E2DDD6" }} tickLine={false} />
+                        <YAxis domain={[0, 10]} tick={{ fontSize: 11, fill: "#8A8480" }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E2DDD6", fontFamily: "Georgia, serif" }} />
+                        <Bar dataKey="score" fill={CHART.green} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div style={{...S.chartCard, gridColumn:"1 / -1"}}>
+                    <div style={S.chartTitle}>Activity — last 14 days</div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={activityData} margin={{ top: 8, right: 12, bottom: 4, left: -18 }}>
+                        <CartesianGrid stroke="#F0EDE8" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#8A8480" }} axisLine={{ stroke: "#E2DDD6" }} tickLine={false} interval={1} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#8A8480" }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E2DDD6", fontFamily: "Georgia, serif" }} />
+                        <Bar dataKey="count" fill={CHART.purple} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Weakness spotlight */}
+                {weakest && (
+                  <div style={S.weaknessCard}>
+                    <div>
+                      <div style={S.weaknessLabel}>Weakness spotlight</div>
+                      <div style={S.weaknessText}>
+                        You struggle most with <strong>{weakest.fwShort}</strong> ({weakest.score}/10 average
+                        {weakest.diff ? `, and with ${weakest.diff} cases` : ""}).
+                      </div>
+                    </div>
+                    <button style={S.weaknessBtn} onClick={practiceWeakness} disabled={genLoading}>
+                      {genLoading ? "Generating…" : "Practice this weakness"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Framework sparklines */}
+                <div style={{...S.chartCard, marginTop:16}}>
+                  <div style={S.chartTitle}>Framework trends</div>
+                  {fwSparklines.length === 0 ? (
+                    <div style={{fontSize:"0.82rem", color:"#8A8480"}}>Complete cases across frameworks to see trends.</div>
+                  ) : (
+                    fwSparklines.map(row => (
+                      <div key={row.fw} style={S.sparkRow}>
+                        <div style={S.sparkName}>{row.fw.replace(" / Due Diligence", "")}</div>
+                        <div style={S.sparkChart}><Sparkline data={row.series} /></div>
+                        <div style={{...S.sparkDelta, color: row.delta > 0 ? "#2E7D52" : row.delta < 0 ? "#C23B22" : "#8A8480"}}>
+                          {row.delta > 0 ? "+" : ""}{row.delta.toFixed(1)}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )
+          )}
+        </div>
+      )}
+
+      {/* ── MOCK INTERVIEW ── */}
+      {screen === "mock" && (
+        <div style={S.pageWrap}>
+          {mockState === "idle" && (
+            <div style={S.mockIntro}>
+              <h2 style={S.pageTitle}>Full mock interview</h2>
+              <p style={S.mockIntroText}>
+                Three back-to-back cases under real interview pressure. You'll have a 60-minute overall
+                clock and a 5-minute timer on every question — when a question's time runs out, the
+                interview moves on, just like the real thing. At the end you get an aggregate score,
+                per-question partner feedback, and a downloadable report.
+              </p>
+              <div style={S.mockRules}>
+                <div style={S.mockRule}><span style={S.mockRuleNum}>3</span> randomized cases</div>
+                <div style={S.mockRule}><span style={S.mockRuleNum}>60</span> minute overall clock</div>
+                <div style={S.mockRule}><span style={S.mockRuleNum}>5</span> minutes per question</div>
+              </div>
+              <button style={S.btnPrimary} onClick={startMock}>Begin mock interview</button>
+            </div>
+          )}
+
+          {mockState === "running" && mockSteps[mockStep] && (() => {
+            const st = mockSteps[mockStep];
+            const qFrac = mockQSec / MOCK_Q;
+            const qColor = qFrac > 0.5 ? "#2E7D52" : qFrac > 0.25 ? "#C9860A" : qFrac > 0.1 ? "#D2691E" : "#C23B22";
+            const caseNum = mockCases.findIndex(c => c.id === st.c.id) + 1;
+            const overallFmt = `${String(Math.floor(mockOverallSec/60)).padStart(2,"0")}:${String(mockOverallSec%60).padStart(2,"0")}`;
+            const qFmt = `${String(Math.floor(mockQSec/60)).padStart(2,"0")}:${String(mockQSec%60).padStart(2,"0")}`;
+            return (
+              <>
+                <div style={S.mockTopBar}>
+                  <div>
+                    <div style={S.mockStepLabel}>Question {mockStep + 1} of {mockSteps.length} · Case {caseNum} of {mockCases.length}</div>
+                    <div style={S.mockOverall}>Overall <strong style={{color: mockOverallSec < 300 ? "#C23B22" : "#1A1714"}}>{overallFmt}</strong></div>
+                  </div>
+                  <div style={S.mockQTimer}>
+                    <svg width="56" height="56" viewBox="0 0 56 56">
+                      <circle cx="28" cy="28" r="23" fill="none" stroke="#EFEAE2" strokeWidth="5" />
+                      <circle cx="28" cy="28" r="23" fill="none" stroke={qColor} strokeWidth="5" strokeLinecap="round"
+                        transform="rotate(-90 28 28)" strokeDasharray={2 * Math.PI * 23}
+                        strokeDashoffset={2 * Math.PI * 23 * (1 - qFrac)} style={{ transition: "stroke-dashoffset 0.9s linear, stroke 0.4s ease" }} />
+                    </svg>
+                    <div style={{...S.mockQTime, color: qColor}}>{qFmt}</div>
+                  </div>
+                </div>
+
+                <div style={{...S.firmBadge, display:"inline-block", marginBottom:10, background: st.c.firm==="McKinsey"?"#EAF0FB":st.c.firm==="BCG"?"#FEF0EE":"#EAFAF1", color: st.c.firm==="McKinsey"?"#1B4B8A":st.c.firm==="BCG"?"#C23B22":"#2E7D52"}}>{st.c.firm}</div>
+                <h3 style={S.mockCaseTitle}>{st.c.title}</h3>
+                <div style={S.mockSituation}>{st.c.situation}</div>
+
+                <div style={S.questionCard}>
+                  <div style={S.questionNum}>Q{mockStep + 1}</div>
+                  <p style={S.questionText}>{st.q.q}</p>
+                  <textarea
+                    style={S.answerArea}
+                    placeholder="Answer under pressure. State your structure first."
+                    value={mockAnswers[`${st.c.id}-${st.qi}`] || ""}
+                    onChange={e => setMockAnswer(e.target.value)}
+                    rows={6}
+                  />
+                </div>
+
+                <div style={S.caseActions}>
+                  <button style={S.btnPrimary} onClick={() => { if (mockStep + 1 >= mockSteps.length) finishMock(); else advanceMock(); }}>
+                    {mockStep + 1 >= mockSteps.length ? "Finish interview" : "Submit and next question"}
+                  </button>
+                  <button style={S.btnGhost} onClick={() => finishMock()}>End early</button>
+                </div>
+              </>
+            );
+          })()}
+
+          {mockState === "scoring" && (
+            <div style={S.mockIntro}>
+              <div style={S.spinner} />
+              <div style={{marginTop:16, color:"#4A4540", fontSize:"0.95rem"}}>
+                The partner panel is scoring your interview — question {mockReviewProgress} of {mockSteps.length}.
+              </div>
+            </div>
+          )}
+
+          {mockState === "report" && mockReport && (
+            <>
+              <div style={S.mockReportHead}>
+                <div>
+                  <div style={S.guessEyebrow}>Mock interview report</div>
+                  <h2 style={S.pageTitle}>Aggregate score {mockReport.agg}/10</h2>
+                </div>
+                <div style={{...S.accuracyCircle, width:78, height:78, borderColor: mockReport.agg >= 7 ? "#2E7D52" : mockReport.agg >= 5 ? "#C9860A" : "#C23B22", color: mockReport.agg >= 7 ? "#2E7D52" : mockReport.agg >= 5 ? "#C9860A" : "#C23B22"}}>
+                  {mockReport.agg}
+                </div>
+              </div>
+
+              <div style={S.mockCaseSummary}>
+                {mockReport.perCase.map((pc, i) => (
+                  <div key={i} style={S.mockCaseSumCard}>
+                    <div style={S.mockCaseSumScore}>{pc.avg}/10</div>
+                    <div style={S.mockCaseSumTitle}>{pc.title}</div>
+                    <div style={S.mockCaseSumMeta}>{pc.firm} · {pc.fw}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={S.caseActions}>
+                <button style={S.btnPrimary} onClick={downloadMockReport}>Download report</button>
+                <button style={S.btnSecondary} onClick={startMock}>New mock interview</button>
+                <button style={S.btnGhost} onClick={() => setMockState("idle")}>Done</button>
+              </div>
+
+              <h3 style={{...S.reviewSectionTitle, marginTop:28}}>Question-by-question feedback</h3>
+              {mockReport.reviews.map((rev, i) => {
+                const scoreColor = rev.score >= 8 ? "#2E7D52" : rev.score >= 5 ? "#C9860A" : "#C23B22";
+                return (
+                  <div key={i} style={S.reviewCard}>
+                    <div style={S.reviewCardTop}>
+                      <div style={S.reviewQ}>Q{i + 1} · {rev.caseTitle}: {rev.q.substring(0, 54)}…</div>
+                      <div style={{...S.reviewScore, color: scoreColor}}>{rev.score}/10</div>
+                    </div>
+                    <div style={{...S.verdictBadge, background: rev.score >= 7 ? "#EAFAF1" : rev.score >= 5 ? "#FBF5E0" : "#FEF0EE", color: scoreColor}}>{rev.verdict}</div>
+                    <div style={S.reviewGrid}>
+                      <div>
+                        <div style={S.reviewSubhead}>What worked</div>
+                        {rev.strengths?.map((s, j) => <div key={j} style={S.reviewPoint}>— {s}</div>)}
+                      </div>
+                      <div>
+                        <div style={S.reviewSubhead}>What's missing</div>
+                        {rev.gaps?.map((g, j) => <div key={j} style={S.reviewPoint}>— {g}</div>)}
+                      </div>
+                    </div>
+                    <div style={S.nextTimeBox}><strong>Next time:</strong> {rev.nexttime}</div>
+                    {rev.improvementPlan && <div style={S.planBox}><strong>Your drill:</strong> {rev.improvementPlan}</div>}
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── CASE GENERATOR MODAL ── */}
+      {genOpen && (
+        <div style={S.modalOverlay} onClick={() => !genLoading && setGenOpen(false)}>
+          <div style={{...S.modalCard, maxWidth:460}} onClick={e => e.stopPropagation()}>
+            <div style={S.modalTitle}>Generate a new case</div>
+            <div style={{...S.modalBody, marginBottom:16}}>Describe what you want to practise. The AI will write an original MBB-style case, complete with a model answer.</div>
+            <div style={S.genGrid}>
+              <div style={S.genField}>
+                <label style={S.genLabel}>Framework</label>
+                <select style={S.fwSelect} value={genForm.fw} onChange={e => setGenForm(f => ({...f, fw: e.target.value}))}>
+                  {FRAMEWORK_POOL.map(fw => <option key={fw} value={fw}>{fw}</option>)}
+                </select>
+              </div>
+              <div style={S.genField}>
+                <label style={S.genLabel}>Difficulty</label>
+                <select style={S.fwSelect} value={genForm.level} onChange={e => setGenForm(f => ({...f, level: e.target.value}))}>
+                  <option value="1">Beginner</option>
+                  <option value="2">Intermediate</option>
+                  <option value="3">Advanced</option>
+                </select>
+              </div>
+              <div style={S.genField}>
+                <label style={S.genLabel}>Industry</label>
+                <input style={S.genInput} placeholder="e.g. Airlines" value={genForm.industry} onChange={e => setGenForm(f => ({...f, industry: e.target.value}))} />
+              </div>
+              <div style={S.genField}>
+                <label style={S.genLabel}>Geography</label>
+                <input style={S.genInput} placeholder="e.g. Southeast Asia" value={genForm.geo} onChange={e => setGenForm(f => ({...f, geo: e.target.value}))} />
+              </div>
+              <div style={S.genField}>
+                <label style={S.genLabel}>Company size</label>
+                <select style={S.fwSelect} value={genForm.size} onChange={e => setGenForm(f => ({...f, size: e.target.value}))}>
+                  {COMPANY_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div style={S.genField}>
+                <label style={S.genLabel}>Functional area</label>
+                <input style={S.genInput} placeholder="e.g. Supply chain" value={genForm.func} onChange={e => setGenForm(f => ({...f, func: e.target.value}))} />
+              </div>
+            </div>
+            <div style={{...S.modalActions, marginTop:20}}>
+              <button style={S.modalCancel} onClick={() => setGenOpen(false)} disabled={genLoading}>Cancel</button>
+              <button style={S.modalConfirm2} onClick={() => runGenerator(genForm)} disabled={genLoading}>
+                {genLoading ? "Generating…" : "Generate case"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── RESET CONFIRMATION MODAL ── */}
+      {showResetModal && (
+        <div style={S.modalOverlay} onClick={() => setShowResetModal(false)}>
+          <div style={S.modalCard} onClick={e => e.stopPropagation()}>
+            <div style={S.modalTitle}>Reset all progress?</div>
+            <div style={S.modalBody}>
+              This permanently clears your XP, level, streak, completed cases, notes, generated cases and history. It cannot be undone.
+            </div>
+            <div style={S.modalActions}>
+              <button style={S.modalCancel} onClick={() => setShowResetModal(false)}>Cancel</button>
+              <button style={S.modalConfirm} onClick={doResetProgress}>Reset everything</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOAST ── */}
+      {toast && (
+        <div style={{...S.toast, ...(toast.kind==="level" ? S.toastLevel : toast.kind==="warn" ? S.toastWarn : {})}}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── STYLES ─────────────────────────────────────────────────────────────────
+const S = {
+  root: { background:"#FAF8F4", minHeight:"100vh", fontFamily:"'Georgia', 'Times New Roman', serif" },
+
+  // Login
+  loginWrap: { minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#FAF8F4" },
+  loginCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:16, padding:"48px 40px", maxWidth:400, width:"100%", textAlign:"center", boxShadow:"0 24px 64px rgba(26,23,20,0.12)" },
+  loginLogo: { fontFamily:"'Georgia',serif", fontSize:"2.2rem", fontWeight:700, marginBottom:8, letterSpacing:-1 },
+  loginSub: { fontSize:"0.85rem", color:"#8A8480", marginBottom:28 },
+  loginAvatarRow: { display:"flex", justifyContent:"center", gap:10, marginBottom:24 },
+  loginAvatar: { width:36, height:36, borderRadius:"50%" },
+  loginInput: { width:"100%", padding:"12px 16px", border:"1.5px solid #E2DDD6", borderRadius:8, fontSize:"0.95rem", fontFamily:"'Georgia',serif", outline:"none", marginBottom:14, background:"#FAF8F4", boxSizing:"border-box" },
+  loginBtn: { width:"100%", padding:"13px", background:"#1A1714", color:"#fff", border:"none", borderRadius:8, fontSize:"0.95rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+  collabBadge: { marginTop:14, fontSize:"0.8rem", color:"#1B4B8A", background:"#EAF0FB", padding:"6px 12px", borderRadius:20 },
+  spinner: { width:28, height:28, margin:"18px auto 0", border:"3px solid #E2DDD6", borderTopColor:"#C9A84C", borderRadius:"50%", animation:"caseiq-spin 0.8s linear infinite" },
+  spinnerSm: { display:"inline-block", width:16, height:16, border:"2px solid #E2DDD6", borderTopColor:"#C9A84C", borderRadius:"50%", animation:"caseiq-spin 0.8s linear infinite", marginRight:8, verticalAlign:"middle" },
+
+  // Nav
+  nav: { position:"sticky", top:0, zIndex:100, background:"rgba(250,248,244,0.95)", backdropFilter:"blur(12px)", borderBottom:"1px solid #E2DDD6", padding:"0 32px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, flexWrap:"wrap" },
+  navLeft: { display:"flex", alignItems:"center", gap:24 },
+  logo: { fontFamily:"'Georgia',serif", fontSize:"1.35rem", fontWeight:700, letterSpacing:-0.5, flexShrink:0 },
+  navLinks: { display:"flex", gap:4, flexWrap:"wrap" },
+  navLink: { padding:"5px 12px", borderRadius:20, fontSize:"0.8rem", fontWeight:500, color:"#4A4540", cursor:"pointer", border:"none", background:"transparent", fontFamily:"'Georgia',serif" },
+  navLinkActive: { background:"#1A1714", color:"#fff" },
+  navRight: { display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" },
+  levelChip: { background:"#EDE7FB", border:"1px solid #D2C6F0", padding:"4px 12px", borderRadius:20, fontSize:"0.76rem", fontWeight:700, color:"#5A3FA0" },
+  scoreChip: { background:"#FBF5E0", border:"1px solid #F0DFA0", padding:"4px 12px", borderRadius:20, fontSize:"0.8rem", fontWeight:700, color:"#9A7A1A" },
+  streakChip: { background:"#FEF0EE", border:"1px solid #F5C6BC", padding:"4px 10px", borderRadius:20, fontSize:"0.8rem", fontWeight:700, color:"#C23B22" },
+  collabBtn: { padding:"5px 14px", border:"1.5px solid #E2DDD6", borderRadius:20, fontSize:"0.78rem", fontWeight:600, cursor:"pointer", background:"#fff", color:"#4A4540", position:"relative", fontFamily:"'Georgia',serif" },
+  copiedBadge: { position:"absolute", top:-24, left:"50%", transform:"translateX(-50%)", background:"#1A1714", color:"#fff", padding:"2px 8px", borderRadius:4, fontSize:"0.7rem", whiteSpace:"nowrap" },
+  avatarPill: { width:30, height:30, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.72rem", fontWeight:700, color:"#fff", flexShrink:0, letterSpacing:0.3 },
+  navUser: { fontSize:"0.82rem", fontWeight:600, color:"#1A1714", maxWidth:80, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" },
+
+  // Home
+  homeWrap: { maxWidth:1100, margin:"0 auto", padding:"60px 32px" },
+  heroSection: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:60, alignItems:"center" },
+  heroLeft: {},
+  eyebrow: { display:"inline-block", background:"#FBF5E0", border:"1px solid #F0DFA0", padding:"4px 14px", borderRadius:20, fontSize:"0.75rem", fontWeight:600, color:"#9A7A1A", letterSpacing:"0.5px", marginBottom:18 },
+  heroH1: { fontFamily:"'Georgia',serif", fontSize:"3rem", fontWeight:700, lineHeight:1.12, letterSpacing:-1.5, marginBottom:18 },
+  heroP: { fontSize:"1rem", color:"#4A4540", lineHeight:1.7, marginBottom:28, fontFamily:"'Georgia',serif" },
+  heroBtns: { display:"flex", gap:12, flexWrap:"wrap" },
+  heroRight: {},
+  statsGrid: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 },
+  statCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"20px 18px", textAlign:"center", boxShadow:"0 2px 8px rgba(26,23,20,0.05)" },
+  statVal: { fontFamily:"'Georgia',serif", fontSize:"1.9rem", fontWeight:700, marginBottom:2 },
+  statLabel: { fontSize:"0.75rem", color:"#8A8480" },
+  fwPreview: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"16px" },
+  fwPreviewTitle: { fontSize:"0.8rem", fontWeight:700, color:"#5A3FA0", letterSpacing:"0.3px", marginBottom:10 },
+  levelBarTrack: { height:8, background:"#F0EDE8", borderRadius:4, overflow:"hidden", marginBottom:8 },
+  levelBarFill: { height:"100%", background:"linear-gradient(90deg,#7B3FA0,#C9A84C)", borderRadius:4, transition:"width 0.6s ease" },
+  levelBarMeta: { fontSize:"0.72rem", color:"#8A8480" },
+
+  // Shared
+  pageWrap: { maxWidth:900, margin:"0 auto", padding:"40px 32px 80px" },
+  pageTitle: { fontFamily:"'Georgia',serif", fontSize:"1.8rem", fontWeight:700, marginBottom:28, letterSpacing:-0.5 },
+  btnPrimary: { padding:"11px 26px", background:"#1A1714", color:"#fff", border:"none", borderRadius:8, fontSize:"0.88rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+  btnSecondary: { padding:"11px 26px", background:"transparent", color:"#1A1714", border:"2px solid #C8C0B4", borderRadius:8, fontSize:"0.88rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+  btnGhost: { padding:"10px 20px", background:"transparent", color:"#8A8480", border:"1px solid #E2DDD6", borderRadius:8, fontSize:"0.85rem", cursor:"pointer", fontFamily:"'Georgia',serif" },
+  emptyState: { textAlign:"center", padding:"60px 20px", color:"#8A8480", fontSize:"0.95rem" },
+
+  // Filters
+  filterBar: { display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16, paddingBottom:16, borderBottom:"1px solid #E2DDD6" },
+  filterGroup: { display:"flex", flexDirection:"column", gap:6 },
+  filterLabel: { fontSize:"0.68rem", fontWeight:700, color:"#8A8480", textTransform:"uppercase", letterSpacing:"0.5px" },
+  segmented: { display:"flex", gap:4, background:"#F0EDE8", borderRadius:8, padding:3 },
+  segBtn: { padding:"6px 12px", border:"none", background:"transparent", borderRadius:6, fontSize:"0.78rem", fontWeight:600, color:"#8A8480", cursor:"pointer", fontFamily:"'Georgia',serif" },
+  segBtnActive: { background:"#1A1714", color:"#fff" },
+  fwSelect: { padding:"7px 12px", border:"1.5px solid #E2DDD6", borderRadius:8, fontSize:"0.8rem", fontFamily:"'Georgia',serif", background:"#fff", color:"#1A1714", cursor:"pointer", outline:"none" },
+  pickerRow: { display:"flex", gap:8, flexWrap:"wrap", marginBottom:24 },
+  pickerChip: { padding:"6px 12px", border:"1.5px solid #E2DDD6", background:"#fff", borderRadius:20, fontSize:"0.75rem", fontWeight:600, color:"#4A4540", cursor:"pointer", fontFamily:"'Georgia',serif", maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" },
+  pickerChipActive: { borderColor:"#1A1714", background:"#1A1714", color:"#fff" },
+  pickerChipDone: { opacity:0.72, borderStyle:"dashed" },
+  doneBanner: { background:"#EAFAF1", border:"1px solid #B3E0C4", borderRadius:8, padding:"12px 16px", fontSize:"0.84rem", color:"#1A5E38", marginBottom:20, lineHeight:1.6, fontFamily:"'Georgia',serif" },
+
+  // Case
+  caseHeader: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, gap:12, flexWrap:"wrap" },
+  caseHeaderLeft: { display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" },
+  firmBadge: { padding:"3px 12px", borderRadius:20, fontSize:"0.72rem", fontWeight:700, letterSpacing:"0.5px", textTransform:"uppercase" },
+  fwTag: { padding:"3px 10px", background:"#FAF8F4", border:"1px solid #E2DDD6", borderRadius:20, fontSize:"0.72rem", fontWeight:600, color:"#4A4540" },
+  levelTag: { padding:"3px 10px", background:"#F4F0FB", border:"1px solid #DDD0F0", borderRadius:20, fontSize:"0.72rem", fontWeight:600, color:"#5A3FA0" },
+  caseCounter: { fontSize:"0.78rem", color:"#8A8480", fontFamily:"monospace" },
+  seenTag: { fontSize:"0.7rem", fontWeight:700, color:"#2E7D52", background:"#EAFAF1", border:"1px solid #B3E0C4", borderRadius:20, padding:"2px 10px" },
+  caseTitle: { fontFamily:"'Georgia',serif", fontSize:"1.6rem", fontWeight:700, letterSpacing:-0.5, marginBottom:16 },
+
+  // Timer card
+  timerCard: { display:"flex", alignItems:"center", gap:16, background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"14px 18px", marginBottom:20, flexWrap:"wrap" },
+  timerInfo: { flex:1, minWidth:120 },
+  timerBig: { fontFamily:"monospace", fontSize:"1.7rem", fontWeight:700, letterSpacing:2 },
+  timerSub: { fontSize:"0.72rem", color:"#8A8480" },
+  timerControls: { display:"flex", gap:8 },
+  timerCtrlBtn: { padding:"8px 16px", background:"#1A1714", color:"#fff", border:"none", borderRadius:8, fontSize:"0.8rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+  timerCtrlBtnGhost: { padding:"8px 14px", background:"transparent", color:"#8A8480", border:"1px solid #E2DDD6", borderRadius:8, fontSize:"0.8rem", cursor:"pointer", fontFamily:"'Georgia',serif" },
+
+  situationBox: { background:"#fff", border:"1px solid #E2DDD6", borderLeft:"4px solid #C9A84C", borderRadius:8, padding:"22px", marginBottom:20 },
+  situationLabel: { fontSize:"0.7rem", fontWeight:700, letterSpacing:"1px", color:"#9A7A1A", textTransform:"uppercase", marginBottom:8 },
+  situationText: { fontSize:"0.92rem", color:"#4A4540", lineHeight:1.75, fontFamily:"'Georgia',serif" },
+
+  // Notes
+  notesWrap: { border:"1px solid #E2DDD6", borderRadius:10, background:"#fff", marginBottom:20, overflow:"hidden" },
+  notesToggle: { width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 18px", background:"#FAF8F4", border:"none", cursor:"pointer", fontFamily:"'Georgia',serif", fontSize:"0.9rem", fontWeight:700, color:"#1A1714" },
+  notesToggleHint: { fontSize:"0.72rem", fontWeight:500, color:"#8A8480" },
+  notesBody: { padding:"14px 18px", borderTop:"1px solid #E2DDD6" },
+  noteTabs: { display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 },
+  noteTab: { padding:"5px 11px", border:"1px solid #E2DDD6", background:"#FAF8F4", borderRadius:6, fontSize:"0.74rem", fontWeight:600, color:"#8A8480", cursor:"pointer", fontFamily:"'Georgia',serif" },
+  noteTabActive: { background:"#1B4B8A", color:"#fff", borderColor:"#1B4B8A" },
+  noteEditorWrap: { resize:"vertical", overflow:"auto", height:200, minHeight:120, maxHeight:520, border:"1.5px solid #E2DDD6", borderRadius:8, background:"#FAF8F4" },
+  noteEditor: { width:"100%", height:"100%", padding:"12px 14px", border:"none", background:"transparent", fontSize:"0.86rem", color:"#1A1714", resize:"none", outline:"none", lineHeight:1.6, boxSizing:"border-box" },
+  notesFoot: { fontSize:"0.72rem", color:"#8A8480", marginTop:8 },
+
+  // Collab panel
+  collabPanel: { background:"#EAF0FB", border:"1px solid #C5D8F0", borderRadius:8, padding:"14px 18px", marginBottom:20 },
+  collabPanelTitle: { fontSize:"0.82rem", fontWeight:700, color:"#1B4B8A", marginBottom:10 },
+  collabUsers: { display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" },
+  collabUser: { display:"flex", alignItems:"center", gap:6 },
+  collabAvatar: { width:28, height:28, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.68rem", fontWeight:700, color:"#fff" },
+  collabUserName: { fontSize:"0.8rem", fontWeight:500, color:"#1B4B8A" },
+  onlineDot: { width:7, height:7, borderRadius:"50%" },
+  addCollabBtn: { padding:"4px 12px", border:"1.5px dashed #1B4B8A", background:"transparent", color:"#1B4B8A", borderRadius:20, fontSize:"0.75rem", fontWeight:600, cursor:"pointer" },
+
+  // Questions
+  questionCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:10, padding:"22px", marginBottom:16 },
+  questionNum: { fontFamily:"monospace", fontSize:"0.7rem", fontWeight:700, color:"#C9A84C", letterSpacing:"1px", marginBottom:6 },
+  questionText: { fontSize:"0.92rem", color:"#1A1714", lineHeight:1.65, marginBottom:12, fontFamily:"'Georgia',serif" },
+  hintRow: { marginBottom:12 },
+  hintBtn: { padding:"5px 14px", border:"1.5px solid #F0DFA0", background:"#FBF5E0", borderRadius:6, fontSize:"0.78rem", fontWeight:600, cursor:"pointer", color:"#9A7A1A" },
+  hintCost: { marginLeft:6, color:"#C23B22", fontSize:"0.72rem" },
+  hintBox: { background:"#FBF5E0", border:"1px solid #F0DFA0", borderRadius:6, padding:"10px 14px", fontSize:"0.82rem", color:"#7A5A10", lineHeight:1.6, fontFamily:"'Georgia',serif" },
+  answerArea: { width:"100%", padding:"12px 14px", border:"1.5px solid #E2DDD6", borderRadius:8, fontSize:"0.88rem", fontFamily:"'Georgia',serif", color:"#1A1714", background:"#FAF8F4", resize:"vertical", outline:"none", lineHeight:1.6, boxSizing:"border-box" },
+  rubricRow: { display:"flex", flexWrap:"wrap", gap:6, marginTop:10 },
+  rubricChip: { padding:"2px 8px", background:"#F0F4FA", border:"1px solid #C5D8F0", borderRadius:4, fontSize:"0.68rem", color:"#1B4B8A", fontWeight:600 },
+  caseActions: { marginTop:24, display:"flex", gap:12 },
+
+  // Reviews
+  reviewSection: { marginTop:28 },
+  reviewSectionTitle: { fontFamily:"'Georgia',serif", fontSize:"1.2rem", fontWeight:700, marginBottom:16 },
+  reviewCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:10, padding:"20px", marginBottom:14 },
+  reviewCardTop: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 },
+  reviewQ: { fontSize:"0.82rem", color:"#4A4540", flex:1, marginRight:12 },
+  reviewScore: { fontFamily:"monospace", fontSize:"1.4rem", fontWeight:700 },
+  verdictBadge: { display:"inline-block", padding:"3px 12px", borderRadius:20, fontSize:"0.78rem", fontWeight:700, marginBottom:14 },
+  reviewGrid: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:14 },
+  reviewSubhead: { fontSize:"0.78rem", fontWeight:700, color:"#8A8480", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:6 },
+  reviewPoint: { fontSize:"0.83rem", color:"#4A4540", lineHeight:1.65, marginBottom:4, fontFamily:"'Georgia',serif" },
+  brutalBox: { background:"#FEF0EE", border:"1px solid #F5C6BC", borderRadius:6, padding:"10px 14px", fontSize:"0.83rem", color:"#8A1A00", lineHeight:1.6, marginBottom:10, fontFamily:"'Georgia',serif" },
+  nextTimeBox: { background:"#EAFAF1", border:"1px solid #B3E0C4", borderRadius:6, padding:"10px 14px", fontSize:"0.83rem", color:"#1A5E38", lineHeight:1.6, fontFamily:"'Georgia',serif" },
+  planBox: { background:"#EDE7FB", border:"1px solid #D2C6F0", borderRadius:6, padding:"10px 14px", fontSize:"0.83rem", color:"#4A2E80", lineHeight:1.6, marginTop:10, fontFamily:"'Georgia',serif" },
+
+  // Model answer
+  modelWrap: { marginTop:8 },
+  modelRevealBtn: { width:"100%", padding:"13px", background:"#1B4B8A", color:"#fff", border:"none", borderRadius:10, fontSize:"0.9rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+  modelLoading: { textAlign:"center", padding:"20px", color:"#8A8480", fontSize:"0.88rem" },
+  modelCard: { background:"#FCFBF8", border:"1.5px solid #C5D8F0", borderRadius:12, padding:"22px" },
+  modelTitle: { fontFamily:"'Georgia',serif", fontSize:"1.05rem", fontWeight:700, marginBottom:16, color:"#1B4B8A" },
+  modelSec: { marginBottom:14 },
+  modelSecLabel: { fontSize:"0.72rem", fontWeight:700, color:"#8A8480", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:6 },
+  modelText: { fontSize:"0.88rem", color:"#3A352F", lineHeight:1.7, fontFamily:"'Georgia',serif" },
+  treeBranch: { display:"flex", gap:10, alignItems:"flex-start", marginBottom:8 },
+  treeMarker: { flexShrink:0, width:22, height:22, borderRadius:6, background:"#1B4B8A", color:"#fff", fontSize:"0.72rem", fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"monospace" },
+  treeText: { fontSize:"0.86rem", color:"#3A352F", lineHeight:1.6, fontFamily:"'Georgia',serif" },
+  modelTwoCol: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginTop:4 },
+  modelPoint: { fontSize:"0.83rem", color:"#4A4540", lineHeight:1.6, marginBottom:4, fontFamily:"'Georgia',serif" },
+
+  // Guesstimate
+  guessHeader: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, gap:16, flexWrap:"wrap" },
+  guessEyebrow: { fontSize:"0.75rem", fontWeight:700, color:"#8A8480", letterSpacing:"0.5px", textTransform:"uppercase", marginBottom:8 },
+  guessTitle: { fontFamily:"'Georgia',serif", fontSize:"1.5rem", fontWeight:700, lineHeight:1.3, marginBottom:12, letterSpacing:-0.5 },
+  guessMeta: { display:"flex", gap:10, alignItems:"center" },
+  catChip: { padding:"3px 12px", background:"#FBF5E0", border:"1px solid #F0DFA0", borderRadius:20, fontSize:"0.75rem", fontWeight:600, color:"#9A7A1A" },
+  guessCounter: { fontSize:"0.75rem", color:"#8A8480", fontFamily:"monospace" },
+  timerBlock: { textAlign:"center", flexShrink:0 },
+  timerDisplay: { fontFamily:"monospace", fontSize:"1.6rem", fontWeight:700, border:"2px solid", borderRadius:8, padding:"8px 16px", marginBottom:8, letterSpacing:2 },
+  timerBtn: { padding:"5px 14px", border:"1.5px solid #E2DDD6", borderRadius:6, fontSize:"0.78rem", fontWeight:600, cursor:"pointer", background:"#fff", fontFamily:"'Georgia',serif" },
+  guessHintBox: { background:"#FBF5E0", border:"1px solid #F0DFA0", borderRadius:8, padding:"12px 16px", fontSize:"0.84rem", color:"#7A5A10", lineHeight:1.65, marginBottom:20, fontFamily:"'Georgia',serif" },
+  guessInputBlock: { display:"flex", flexDirection:"column", gap:12, marginBottom:20 },
+  guessInputRow: { display:"flex", alignItems:"center", gap:12 },
+  guessLabel: { minWidth:110, fontSize:"0.8rem", fontWeight:600, color:"#4A4540", background:"#FAF8F4", border:"1px solid #E2DDD6", borderRadius:6, padding:"10px 12px", flexShrink:0 },
+  guessInput: { flex:1, padding:"10px 14px", border:"1.5px solid #E2DDD6", borderRadius:8, fontSize:"0.9rem", fontFamily:"monospace", background:"#fff", outline:"none", color:"#1A1714" },
+  guessActions: { display:"flex", gap:12, marginBottom:24 },
+  guessResultBlock: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"24px", marginTop:8 },
+  guessResultTop: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 },
+  guessAnswerLabel: { fontSize:"0.75rem", fontWeight:700, color:"#8A8480", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:4 },
+  guessAnswerVal: { fontFamily:"'Georgia',serif", fontSize:"1.1rem", fontWeight:700 },
+  accuracyCircle: { width:64, height:64, borderRadius:"50%", border:"3px solid", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"monospace", fontSize:"1rem", fontWeight:700, flexShrink:0 },
+  guessBreakdown: { fontSize:"0.85rem", color:"#4A4540", lineHeight:1.75, background:"#FAF8F4", borderRadius:6, padding:"14px", marginBottom:14, fontFamily:"'Georgia',serif" },
+  guessFeedback: { fontSize:"0.85rem", color:"#1A1714", lineHeight:1.65, marginBottom:10, fontFamily:"'Georgia',serif", background:"#FEF0EE", borderRadius:6, padding:"10px 14px", border:"1px solid #F5C6BC" },
+  guessImprove: { fontSize:"0.83rem", color:"#1A5E38", lineHeight:1.65, background:"#EAFAF1", border:"1px solid #B3E0C4", borderRadius:6, padding:"10px 14px", marginBottom:16, fontFamily:"'Georgia',serif" },
+
+  // History
+  historyList: { display:"flex", flexDirection:"column", gap:12 },
+  historyCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:10, padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" },
+  historyLeft: { flex:1 },
+  historyType: { display:"inline-block", padding:"2px 10px", borderRadius:20, fontSize:"0.7rem", fontWeight:700, marginBottom:6 },
+  historyTitle: { fontSize:"0.9rem", fontWeight:600, marginBottom:8, fontFamily:"'Georgia',serif" },
+  historyMeta: { display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" },
+  historyMetaChip: { padding:"2px 8px", background:"#FAF8F4", border:"1px solid #E2DDD6", borderRadius:4, fontSize:"0.68rem", color:"#4A4540" },
+  historyTime: { fontSize:"0.7rem", color:"#8A8480", fontFamily:"monospace" },
+  historyRight: { textAlign:"right", flexShrink:0, marginLeft:20 },
+  historyScore: { marginBottom:4 },
+  historyScoreVal: { fontFamily:"monospace", fontSize:"1.2rem", fontWeight:700, color:"#1A1714" },
+  historyScoreLabel: { fontSize:"0.68rem", color:"#8A8480" },
+  historyPts: { fontSize:"0.78rem", fontWeight:700, color:"#C9A84C" },
+
+  // Dashboard
+  dashTitleRow: { display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12, marginBottom:28 },
+  dashTabs: { display:"flex", gap:4, background:"#F0EDE8", borderRadius:8, padding:3 },
+  dashTabBtn: { padding:"8px 18px", border:"none", background:"transparent", borderRadius:6, fontSize:"0.85rem", fontWeight:600, color:"#8A8480", cursor:"pointer", fontFamily:"'Georgia',serif" },
+  dashTabActive: { background:"#1A1714", color:"#fff" },
+  resetBtn: { padding:"8px 16px", background:"transparent", color:"#C23B22", border:"1.5px solid #F5C6BC", borderRadius:8, fontSize:"0.8rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+  lbWrap: { display:"grid", gridTemplateColumns:"1fr 340px", gap:24 },
+  lbTable: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, overflow:"hidden" },
+  lbHeaderRow: { display:"flex", padding:"12px 20px", background:"#FAF8F4", borderBottom:"1px solid #E2DDD6", fontSize:"0.72rem", fontWeight:700, color:"#8A8480", textTransform:"uppercase", letterSpacing:"0.5px" },
+  lbRow: { display:"flex", padding:"14px 20px", borderBottom:"1px solid #E2DDD6", alignItems:"center", transition:"background 0.2s" },
+  lbCell: { flex:1, display:"flex", alignItems:"center", fontSize:"0.88rem" },
+  lbAvatar: { width:30, height:30, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.7rem", fontWeight:700, color:"#fff", marginRight:10, flexShrink:0 },
+  youBadge: { display:"inline-block", marginLeft:6, padding:"1px 6px", background:"#EAF0FB", color:"#1B4B8A", borderRadius:4, fontSize:"0.65rem", fontWeight:700 },
+  dashRight: { display:"flex", flexDirection:"column", gap:16 },
+  dashCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"20px" },
+  dashCardTitle: { fontFamily:"'Georgia',serif", fontSize:"1rem", fontWeight:700, marginBottom:14 },
+  dashStatRow: { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:"1px solid #F0EDE8", fontSize:"0.85rem" },
+  dashStatLabel: { color:"#4A4540" },
+  dashStatVal: { fontWeight:700, fontFamily:"monospace" },
+
+  // Analytics
+  kpiRow: { display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:14, marginBottom:20 },
+  kpiCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"18px", textAlign:"center", boxShadow:"0 2px 8px rgba(26,23,20,0.05)" },
+  kpiVal: { fontFamily:"'Georgia',serif", fontSize:"1.6rem", fontWeight:700, marginBottom:4 },
+  kpiLabel: { fontSize:"0.72rem", color:"#8A8480" },
+  chartGrid: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 },
+  chartCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"18px", position:"relative" },
+  chartTitle: { fontSize:"0.82rem", fontWeight:700, color:"#4A4540", marginBottom:12, fontFamily:"'Georgia',serif" },
+  pieCenterLabel: { position:"absolute", top:"57%", left:0, right:0, textAlign:"center", fontFamily:"'Georgia',serif", fontWeight:700, fontSize:"1rem", color:"#2E7D52", pointerEvents:"none" },
+
+  // Modal
+  modalOverlay: { position:"fixed", inset:0, background:"rgba(26,23,20,0.45)", backdropFilter:"blur(3px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:20 },
+  modalCard: { background:"#fff", borderRadius:16, padding:"28px 26px", maxWidth:400, width:"100%", boxShadow:"0 24px 64px rgba(26,23,20,0.25)" },
+  modalTitle: { fontFamily:"'Georgia',serif", fontSize:"1.3rem", fontWeight:700, marginBottom:10 },
+  modalBody: { fontSize:"0.9rem", color:"#4A4540", lineHeight:1.6, marginBottom:22, fontFamily:"'Georgia',serif" },
+  modalActions: { display:"flex", gap:10, justifyContent:"flex-end" },
+  modalCancel: { padding:"9px 18px", background:"transparent", color:"#4A4540", border:"1px solid #E2DDD6", borderRadius:8, fontSize:"0.85rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+  modalConfirm: { padding:"9px 18px", background:"#C23B22", color:"#fff", border:"none", borderRadius:8, fontSize:"0.85rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+
+  // Toast
+  toast: { position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", background:"#1A1714", color:"#fff", padding:"12px 22px", borderRadius:10, fontSize:"0.85rem", fontWeight:600, boxShadow:"0 12px 32px rgba(26,23,20,0.3)", zIndex:300, fontFamily:"'Georgia',serif", animation:"caseiq-rise 0.3s ease" },
+  toastLevel: { background:"linear-gradient(90deg,#7B3FA0,#C9A84C)" },
+  toastWarn: { background:"#C23B22" },
+
+  // Generator
+  genBtn: { padding:"7px 16px", background:"#1B4B8A", color:"#fff", border:"none", borderRadius:8, fontSize:"0.8rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif", whiteSpace:"nowrap" },
+  inlineLinkBtn: { background:"none", border:"none", padding:0, color:"#1A5E38", fontWeight:700, textDecoration:"underline", cursor:"pointer", fontFamily:"'Georgia',serif", fontSize:"inherit" },
+  genTag: { fontSize:"0.7rem", fontWeight:700, color:"#5A3FA0", background:"#EDE7FB", border:"1px solid #D2C6F0", borderRadius:20, padding:"2px 10px" },
+  genGrid: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 },
+  genField: { display:"flex", flexDirection:"column", gap:5 },
+  genLabel: { fontSize:"0.72rem", fontWeight:700, color:"#8A8480", textTransform:"uppercase", letterSpacing:"0.5px" },
+  genInput: { padding:"9px 12px", border:"1.5px solid #E2DDD6", borderRadius:8, fontSize:"0.85rem", fontFamily:"'Georgia',serif", background:"#FAF8F4", outline:"none", color:"#1A1714", boxSizing:"border-box" },
+  modalConfirm2: { padding:"9px 18px", background:"#1B4B8A", color:"#fff", border:"none", borderRadius:8, fontSize:"0.85rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+
+  // Exhibits
+  exhibitBox: { marginTop:14, paddingTop:14, borderTop:"1px dashed #E2DDD6" },
+  exhibitLabel: { fontSize:"0.7rem", fontWeight:700, letterSpacing:"1px", color:"#9A7A1A", textTransform:"uppercase", marginBottom:8 },
+  exhibitRow: { display:"flex", gap:10, alignItems:"flex-start", marginBottom:6, fontSize:"0.85rem", color:"#4A4540", lineHeight:1.6, fontFamily:"'Georgia',serif" },
+  exhibitNum: { flexShrink:0, fontFamily:"monospace", fontSize:"0.72rem", fontWeight:700, color:"#9A7A1A", background:"#FBF5E0", border:"1px solid #F0DFA0", borderRadius:4, padding:"1px 6px" },
+
+  // Weakness
+  weaknessCard: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:16, background:"#FEF0EE", border:"1px solid #F5C6BC", borderRadius:12, padding:"18px 20px", marginTop:16, flexWrap:"wrap" },
+  weaknessLabel: { fontSize:"0.72rem", fontWeight:700, color:"#C23B22", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:6 },
+  weaknessText: { fontSize:"0.92rem", color:"#3A352F", lineHeight:1.6, fontFamily:"'Georgia',serif" },
+  weaknessBtn: { padding:"10px 18px", background:"#C23B22", color:"#fff", border:"none", borderRadius:8, fontSize:"0.82rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif", whiteSpace:"nowrap" },
+
+  // Sparklines
+  sparkRow: { display:"flex", alignItems:"center", gap:12, padding:"8px 0", borderBottom:"1px solid #F0EDE8" },
+  sparkName: { flex:1, fontSize:"0.82rem", color:"#4A4540", fontWeight:500 },
+  sparkChart: { flexShrink:0 },
+  sparkDelta: { width:44, textAlign:"right", fontFamily:"monospace", fontSize:"0.82rem", fontWeight:700 },
+
+  // Mock
+  mockIntro: { textAlign:"center", maxWidth:620, margin:"20px auto", padding:"20px" },
+  mockIntroText: { fontSize:"0.95rem", color:"#4A4540", lineHeight:1.75, marginBottom:24, fontFamily:"'Georgia',serif" },
+  mockRules: { display:"flex", gap:16, justifyContent:"center", marginBottom:28, flexWrap:"wrap" },
+  mockRule: { display:"flex", alignItems:"center", gap:8, fontSize:"0.85rem", color:"#4A4540", background:"#fff", border:"1px solid #E2DDD6", borderRadius:10, padding:"10px 16px" },
+  mockRuleNum: { fontFamily:"'Georgia',serif", fontSize:"1.3rem", fontWeight:700, color:"#C9A84C" },
+  mockTopBar: { display:"flex", justifyContent:"space-between", alignItems:"center", background:"#1A1714", color:"#fff", borderRadius:12, padding:"14px 20px", marginBottom:20 },
+  mockStepLabel: { fontSize:"0.72rem", color:"#C8C0B4", marginBottom:4, letterSpacing:"0.3px" },
+  mockOverall: { fontSize:"0.95rem", fontFamily:"monospace" },
+  mockQTimer: { display:"flex", alignItems:"center", gap:10, position:"relative" },
+  mockQTime: { fontFamily:"monospace", fontSize:"1.05rem", fontWeight:700, minWidth:52 },
+  mockCaseTitle: { fontFamily:"'Georgia',serif", fontSize:"1.4rem", fontWeight:700, letterSpacing:-0.5, marginBottom:12 },
+  mockSituation: { fontSize:"0.9rem", color:"#4A4540", lineHeight:1.75, background:"#fff", border:"1px solid #E2DDD6", borderLeft:"4px solid #C9A84C", borderRadius:8, padding:"18px", marginBottom:20, fontFamily:"'Georgia',serif" },
+  mockReportHead: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:16, flexWrap:"wrap" },
+  mockCaseSummary: { display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14, marginBottom:24 },
+  mockCaseSumCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"16px", textAlign:"center" },
+  mockCaseSumScore: { fontFamily:"'Georgia',serif", fontSize:"1.5rem", fontWeight:700, marginBottom:6 },
+  mockCaseSumTitle: { fontSize:"0.82rem", fontWeight:600, marginBottom:4, lineHeight:1.4, fontFamily:"'Georgia',serif" },
+  mockCaseSumMeta: { fontSize:"0.72rem", color:"#8A8480" },
+
+  // Daily challenge
+  dailyCard: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:20, background:"#fff", border:"1px solid #E2DDD6", borderTop:"3px solid #C9A84C", borderRadius:14, padding:"22px 24px", marginTop:28, flexWrap:"wrap", boxShadow:"0 2px 8px rgba(26,23,20,0.05)" },
+  dailyLeft: { flex:1, minWidth:240 },
+  dailyRight: { flexShrink:0 },
+  dailyHead: { display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 },
+  dailyBadge: { fontSize:"0.7rem", fontWeight:700, letterSpacing:"1px", color:"#9A7A1A", textTransform:"uppercase", background:"#FBF5E0", border:"1px solid #F0DFA0", borderRadius:20, padding:"3px 12px" },
+  dailyStreakChip: { fontSize:"0.72rem", fontWeight:700, color:"#C23B22", background:"#FEF0EE", border:"1px solid #F5C6BC", borderRadius:20, padding:"3px 10px" },
+  dailyCountdown: { fontSize:"0.75rem", color:"#8A8480", fontFamily:"monospace" },
+  dailyTitle: { fontFamily:"'Georgia',serif", fontSize:"1.4rem", fontWeight:700, letterSpacing:-0.5, marginBottom:12 },
+  dailyMeta: { display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" },
+  dailyBonusTag: { fontSize:"0.72rem", fontWeight:700, color:"#5A3FA0", background:"#EDE7FB", border:"1px solid #D2C6F0", borderRadius:20, padding:"3px 10px" },
+  dailyDoneBadge: { fontSize:"0.85rem", fontWeight:700, color:"#2E7D52", background:"#EAFAF1", border:"1px solid #B3E0C4", borderRadius:8, padding:"11px 20px" },
+  dailyInlineTag: { fontSize:"0.7rem", fontWeight:700, color:"#9A7A1A", background:"#FBF5E0", border:"1px solid #F0DFA0", borderRadius:20, padding:"2px 10px" },
+
+  // Collab note
+  collabNote: { marginTop:10, fontSize:"0.75rem", color:"#5A6B82", lineHeight:1.55, fontFamily:"'Georgia',serif" },
+
+  // Leaderboard controls
+  lbControls: { display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:12, flexWrap:"wrap" },
+  lbToggle: { display:"flex", alignItems:"center", gap:8, fontSize:"0.82rem", color:"#4A4540", cursor:"pointer", fontFamily:"'Georgia',serif" },
+  lbRefresh: { padding:"6px 14px", border:"1.5px solid #E2DDD6", background:"#fff", borderRadius:8, fontSize:"0.78rem", fontWeight:600, cursor:"pointer", color:"#4A4540", fontFamily:"'Georgia',serif" },
+  lbFootNote: { marginTop:12, fontSize:"0.74rem", color:"#8A8480", lineHeight:1.55, fontFamily:"'Georgia',serif" },
+  seedBadge: { display:"inline-block", marginLeft:6, padding:"1px 6px", background:"#F0EDE8", color:"#8A8480", borderRadius:4, fontSize:"0.62rem", fontWeight:700 },
+
+  // Settings + shortcut hint
+  soundBtn: { padding:"8px 14px", background:"transparent", color:"#4A4540", border:"1.5px solid #E2DDD6", borderRadius:8, fontSize:"0.8rem", fontWeight:600, cursor:"pointer", fontFamily:"'Georgia',serif" },
+  shortcutHint: { fontSize:"0.72rem", color:"#B8B2A8", marginTop:8 },
+
+  // Awards
+  awardsGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(150px, 1fr))", gap:14 },
+  awardCard: { background:"#fff", border:"1px solid #E2DDD6", borderRadius:12, padding:"18px 16px", textAlign:"center", transition:"transform 0.15s ease" },
+  awardCardLocked: { opacity:0.55, filter:"grayscale(0.6)" },
+  awardMedal: { width:52, height:52, borderRadius:"50%", margin:"0 auto 12px", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Georgia',serif", fontWeight:700, fontSize:"1.1rem", color:"#fff", border:"3px solid #fff", boxShadow:"0 2px 10px rgba(26,23,20,0.15)" },
+  awardTitle: { fontFamily:"'Georgia',serif", fontSize:"0.9rem", fontWeight:700, marginBottom:4 },
+  awardDesc: { fontSize:"0.75rem", color:"#8A8480", lineHeight:1.45 },
+  awardProgress: { fontSize:"0.9rem", color:"#4A4540", marginBottom:18, fontFamily:"'Georgia',serif" },
+};
+
+// Inject keyframes + responsive + accessibility rules once
+if (typeof document !== "undefined" && !document.getElementById("caseiq-anim")) {
+  const el = document.createElement("style");
+  el.id = "caseiq-anim";
+  el.textContent = `
+    @keyframes caseiq-spin { to { transform: rotate(360deg); } }
+    @keyframes caseiq-rise { from { opacity:0; transform: translate(-50%, 12px); } to { opacity:1; transform: translate(-50%, 0); } }
+    @media (max-width: 820px) {
+      .caseiq-hero { grid-template-columns: 1fr !important; }
+    }
+    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+      outline: 3px solid #1B4B8A; outline-offset: 2px; border-radius: 6px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+    }
+  `;
+  document.head.appendChild(el);
+}
